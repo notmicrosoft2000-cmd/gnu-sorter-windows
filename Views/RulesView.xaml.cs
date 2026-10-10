@@ -267,7 +267,7 @@ public sealed partial class RulesView : Page
             XamlRoot = XamlRoot,
         };
 
-        dialog.PrimaryButtonClick += (_, args) =>
+        dialog.PrimaryButtonClick += (sender, args) =>
         {
             var name = nameBox.Text.Trim();
             var extensions = ParseExtensions(extBox.Text);
