@@ -14,18 +14,19 @@
             <TextBlock Text="Folders to sort"
                        Style="{StaticResource TitleTextBlockStyle}"
                        VerticalAlignment="Center" />
-            <Button Content="Add folder" Click="AddFolder_Click">
-                <Button.Icon>
+            <Button Click="AddFolder_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
                     <SymbolIcon Symbol="Add" />
-                </Button.Icon>
+                    <TextBlock Text="Add folder" />
+                </StackPanel>
             </Button>
             <Button x:Name="SortNowButton"
-                    Content="Sort now"
                     Style="{StaticResource AccentButtonStyle}"
                     Click="SortNow_Click">
-                <Button.Icon>
+                <StackPanel Orientation="Horizontal" Spacing="6">
                     <SymbolIcon Symbol="Play" />
-                </Button.Icon>
+                    <TextBlock Text="Sort now" />
+                </StackPanel>
             </Button>
         </StackPanel>
 
@@ -73,9 +74,7 @@
 
                             <Button Grid.Column="2" Content="Open" Click="OpenFolder_Click" />
                             <Button Grid.Column="3" Click="RemoveFolder_Click" ToolTipService.ToolTip="Remove folder">
-                                <Button.Icon>
-                                    <SymbolIcon Symbol="Delete" />
-                                </Button.Icon>
+                                <SymbolIcon Symbol="Delete" />
                             </Button>
                         </Grid>
                     </DataTemplate>

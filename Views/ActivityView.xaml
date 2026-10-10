@@ -14,15 +14,17 @@
             <TextBlock Text="Activity"
                        Style="{StaticResource TitleTextBlockStyle}"
                        VerticalAlignment="Center" />
-            <Button x:Name="UndoButton" Content="Undo last" Click="Undo_Click">
-                <Button.Icon>
+            <Button x:Name="UndoButton" Click="Undo_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
                     <SymbolIcon Symbol="Undo" />
-                </Button.Icon>
+                    <TextBlock Text="Undo last" />
+                </StackPanel>
             </Button>
-            <Button Content="Refresh" Click="Refresh_Click">
-                <Button.Icon>
+            <Button Click="Refresh_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
                     <SymbolIcon Symbol="Refresh" />
-                </Button.Icon>
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
             </Button>
         </StackPanel>
 

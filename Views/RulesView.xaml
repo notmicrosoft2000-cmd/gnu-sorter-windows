@@ -21,9 +21,7 @@
 
                 <Button Grid.Column="1" Content="Edit" Click="EditRule_Click" />
                 <Button Grid.Column="2" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete rule">
-                    <Button.Icon>
-                        <SymbolIcon Symbol="Delete" />
-                    </Button.Icon>
+                    <SymbolIcon Symbol="Delete" />
                 </Button>
             </Grid>
         </DataTemplate>
