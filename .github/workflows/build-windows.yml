@@ -1,0 +1,34 @@
+name: Build Windows (x64)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: dotnet restore gnu-sorter-windows.csproj
+
+      - name: Build (x64, self-contained single-file)
+        run: dotnet publish gnu-sorter-windows.csproj -c Release -r win-x64 -p:SelfContained=true -p:WindowsPackageType=None -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/win-x64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GNU-Sorter-Windows-x64
+          path: publish/win-x64/*.exe
