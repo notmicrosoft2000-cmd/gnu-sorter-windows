@@ -46,24 +46,31 @@ existing configuration can be reused.
 
 ## Build locally (Windows)
 
-Requires the .NET 8 SDK. Building WinUI 3 also works from Visual Studio 2022 with
-the **Windows App SDK** workload.
+Requires the .NET 8 SDK (8.0.402 or later) and the **Windows App SDK** workload,
+or Visual Studio 2022 with the same workload.
+
+> **Tip:** build and publish with **MSBuild**, not the `dotnet` CLI. The WinUI XAML
+> compiler (`XamlCompiler.exe`) can fail on a clean `dotnet build` with a silent
+> `exited with code 1` (MSB3073), even when the project is valid
+> ([microsoft-ui-xaml#11183](https://github.com/microsoft/microsoft-ui-xaml/issues/11183)).
 
 ```powershell
 git clone https://github.com/notmicrosoft2000-cmd/gnu-sorter-windows.git
 cd gnu-sorter-windows
 
-# Debug build
-dotnet build gnu-sorter-windows.csproj -c Release -r win-x64 -p:Platform=x64
+# Release build
+msbuild gnu-sorter-windows.csproj /restore /t:Build `
+  /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64
 
 # Self-contained single-file executable
-dotnet publish gnu-sorter-windows.csproj -c Release -r win-x64 -p:Platform=x64 `
-  -p:SelfContained=true -p:WindowsAppSDKSelfContained=true `
-  -p:WindowsPackageType=None -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true
+msbuild gnu-sorter-windows.csproj /t:Publish `
+  /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
+  /p:SelfContained=true /p:WindowsAppSDKSelfContained=true `
+  /p:WindowsPackageType=None /p:PublishSingleFile=true `
+  /p:IncludeNativeLibrariesForSelfExtract=true /p:PublishDir=publish\win-x64\
 ```
 
-Output: `bin/Release/net8.0-windows10.0.22621.0/win-x64/publish/gnu-sorter-windows.exe`
+Output: `publish\win-x64\gnu-sorter-windows.exe`
 
 ## Install / run
 
