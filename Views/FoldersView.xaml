@@ -1,18 +1,100 @@
 <Page x:Class="GnuSorter.Views.FoldersView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Margin="24">
+
+    <Grid Margin="24" RowSpacing="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
-            <TextBlock Text="Folders to sort" FontSize="24" FontWeight="SemiBold"/>
-            <Button Content="Add folder" Click="AddFolder_Click"/>
-            <Button Content="Sort now" Style="{StaticResource AccentButtonStyle}" Click="SortNow_Click"/>
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="Folders to sort"
+                       Style="{StaticResource TitleTextBlockStyle}"
+                       VerticalAlignment="Center" />
+            <Button Content="Add folder" Click="AddFolder_Click">
+                <Button.Icon>
+                    <SymbolIcon Symbol="Add" />
+                </Button.Icon>
+            </Button>
+            <Button x:Name="SortNowButton"
+                    Content="Sort now"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Click="SortNow_Click">
+                <Button.Icon>
+                    <SymbolIcon Symbol="Play" />
+                </Button.Icon>
+            </Button>
         </StackPanel>
 
-        <ListView x:Name="FoldersList" Grid.Row="1"/>
+        <InfoBar x:Name="StatusBar"
+                 Grid.Row="1"
+                 IsOpen="False"
+                 IsClosable="True" />
+
+        <Grid Grid.Row="2">
+            <ListView x:Name="FoldersList" SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnSpacing="12" Padding="4,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <ToggleSwitch Grid.Column="0"
+                                          IsOn="{Binding Enabled, Mode=TwoWay}"
+                                          OnContent=""
+                                          OffContent=""
+                                          MinWidth="0"
+                                          Toggled="FolderToggle_Toggled" />
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding Subtitle}"
+                                               Opacity="0.7"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Border Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                            CornerRadius="4"
+                                            Padding="6,1"
+                                            Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="custom rules" FontSize="11" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Button Grid.Column="2" Content="Open" Click="OpenFolder_Click" />
+                            <Button Grid.Column="3" Click="RemoveFolder_Click" ToolTipService.ToolTip="Remove folder">
+                                <Button.Icon>
+                                    <SymbolIcon Symbol="Delete" />
+                                </Button.Icon>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock x:Name="EmptyHint"
+                       Text="No folders yet. Add one to get started."
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Opacity="0.7"
+                       Visibility="Collapsed" />
+        </Grid>
+
+        <TextBlock x:Name="HintText"
+                   Grid.Row="3"
+                   FontSize="12"
+                   Opacity="0.6"
+                   TextWrapping="Wrap"
+                   Text="New files land in the matching category folder. Unmatched files go to Needs-review." />
     </Grid>
 </Page>

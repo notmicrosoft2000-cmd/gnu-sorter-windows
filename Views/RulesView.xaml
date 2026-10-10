@@ -1,35 +1,116 @@
 <Page x:Class="GnuSorter.Views.RulesView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Margin="24" ColumnSpacing="16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="12" Grid.ColumnSpan="2" Margin="0,0,0,16">
-            <TextBlock Text="Rules" FontSize="24" FontWeight="SemiBold"/>
-            <TextBox PlaceholderText="Search rules" Width="240"/>
-            <Button Content="Add rule" Style="{StaticResource AccentButtonStyle}"/>
-            <Button Content="Advanced editor..."/>
-            <Button Content="Apply preset"/>
+    <Page.Resources>
+        <DataTemplate x:Key="RuleTemplate">
+            <Grid ColumnSpacing="8" Padding="4,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Subtitle}"
+                               Opacity="0.7"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="Edit" Click="EditRule_Click" />
+                <Button Grid.Column="2" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete rule">
+                    <Button.Icon>
+                        <SymbolIcon Symbol="Delete" />
+                    </Button.Icon>
+                </Button>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="FolderTemplate">
+            <StackPanel Padding="0,6">
+                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Subtitle}"
+                           Opacity="0.7"
+                           FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Margin="24" ColumnSpacing="20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Spacing="8">
+            <TextBlock Text="Folders" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <ListView x:Name="FoldersPane"
+                      SelectionMode="Single"
+                      ItemTemplate="{StaticResource FolderTemplate}"
+                      SelectionChanged="FoldersPane_SelectionChanged" />
         </StackPanel>
 
-        <ListView x:Name="FoldersPane" Grid.Row="1" Grid.Column="0"/>
-        <ScrollViewer Grid.Row="1" Grid.Column="1">
-            <StackPanel Spacing="12">
-                <ToggleSwitch Header="Use default rules" IsOn="True"/>
-                <Expander Header="File extensions" IsExpanded="True">
-                    <ListView x:Name="ExtRules"/>
-                </Expander>
-                <Expander Header="Name matching (advanced)" IsExpanded="True">
-                    <ListView x:Name="NameRules"/>
-                </Expander>
+        <Grid Grid.Column="1" RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <TextBlock x:Name="HeaderText"
+                       Text="Rules"
+                       Style="{StaticResource TitleTextBlockStyle}" />
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10">
+                <ToggleSwitch x:Name="InheritToggle"
+                              MinWidth="200"
+                              OnContent="Use default rules"
+                              OffContent="Custom rules"
+                              Toggled="InheritToggle_Toggled" />
+                <Button x:Name="AddRuleButton"
+                        Content="Add rule"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="AddRule_Click" />
+                <Button x:Name="PresetButton" Content="Apply preset">
+                    <Button.Flyout>
+                        <MenuFlyout x:Name="PresetFlyout" />
+                    </Button.Flyout>
+                </Button>
+                <Button x:Name="AdvancedButton" Content="Advanced editor…" Click="Advanced_Click" />
+                <TextBox x:Name="SearchBox"
+                         PlaceholderText="Search rules"
+                         Width="180"
+                         TextChanged="SearchBox_TextChanged" />
             </StackPanel>
-        </ScrollViewer>
+
+            <TextBlock x:Name="RulesHint"
+                       Grid.Row="2"
+                       FontSize="12"
+                       Opacity="0.7"
+                       TextWrapping="Wrap" />
+
+            <Expander Grid.Row="3" Header="File extensions" IsExpanded="True" HorizontalAlignment="Stretch">
+                <ListView x:Name="ExtRules"
+                          SelectionMode="None"
+                          ItemTemplate="{StaticResource RuleTemplate}" />
+            </Expander>
+
+            <Expander Grid.Row="4" Header="Name matching (advanced)" IsExpanded="True" HorizontalAlignment="Stretch">
+                <ListView x:Name="NameRules"
+                          SelectionMode="None"
+                          ItemTemplate="{StaticResource RuleTemplate}" />
+            </Expander>
+        </Grid>
+
+        <InfoBar x:Name="StatusBar"
+                 Grid.Column="1"
+                 VerticalAlignment="Bottom"
+                 IsOpen="False"
+                 IsClosable="True" />
     </Grid>
 </Page>

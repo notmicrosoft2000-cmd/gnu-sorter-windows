@@ -24,8 +24,17 @@ jobs:
       - name: Restore
         run: dotnet restore gnu-sorter-windows.csproj
 
-      - name: Build (x64, self-contained single-file)
-        run: dotnet publish gnu-sorter-windows.csproj -c Release -r win-x64 -p:SelfContained=true -p:WindowsPackageType=None -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/win-x64
+      - name: Build (x64)
+        run: dotnet build gnu-sorter-windows.csproj -c Release -r win-x64 -p:Platform=x64
+
+      - name: Publish (x64, self-contained single-file)
+        run: >
+          dotnet publish gnu-sorter-windows.csproj
+          -c Release -r win-x64 -p:Platform=x64
+          -p:SelfContained=true -p:WindowsAppSDKSelfContained=true
+          -p:WindowsPackageType=None -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/win-x64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

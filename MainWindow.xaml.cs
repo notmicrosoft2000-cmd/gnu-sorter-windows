@@ -1,32 +1,93 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using GnuSorter.Services;
+using GnuSorter.Views;
 
 namespace GnuSorter;
 
 public sealed partial class MainWindow : Window
 {
+    private readonly AppServices _services = App.Services;
+
     public MainWindow()
     {
         InitializeComponent();
-        ContentFrame.Navigate(typeof(Views.FoldersView));
+        Title = "GNU Sorter";
+
+        try
+        {
+            var icon = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Icon.ico");
+            AppWindow.SetIcon(icon);
+        }
+        catch
+        {
+            // The taskbar icon is cosmetic; ignore failures.
+        }
+
+        _services.Watcher.Sorted += OnSorted;
+        ContentFrame.Navigate(typeof(FoldersView));
+        UpdateWatchUi();
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (args.IsSettingsSelected)
+        {
+            ContentFrame.Navigate(typeof(SettingsView));
+            return;
+        }
+
         if (args.SelectedItem is NavigationViewItem item && item.Tag is string tag)
         {
-            Type? pageType = tag switch
+            Type? page = tag switch
             {
-                "FoldersView" => typeof(Views.FoldersView),
-                "RulesView" => typeof(Views.RulesView),
-                "ActivityView" => typeof(Views.ActivityView),
-                _ => null
+                "FoldersView" => typeof(FoldersView),
+                "RulesView" => typeof(RulesView),
+                "ActivityView" => typeof(ActivityView),
+                _ => null,
             };
 
-            if (pageType != null)
+            if (page is not null)
             {
-                ContentFrame.Navigate(pageType);
+                ContentFrame.Navigate(page);
             }
         }
+    }
+
+    private void WatchToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_services.Watcher.IsRunning)
+        {
+            _services.Watcher.Stop();
+            StatusText.Text = "Watching stopped.";
+            UpdateWatchUi();
+            return;
+        }
+
+        var roots = _services.EnabledRoots();
+        if (roots.Count == 0)
+        {
+            StatusText.Text = "Add and enable a folder before watching.";
+            UpdateWatchUi();
+            return;
+        }
+
+        _services.Watcher.Start(roots);
+        StatusText.Text = $"Watching {roots.Count} folder(s).";
+        UpdateWatchUi();
+    }
+
+    private void OnSorted(string path, string category)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+            StatusText.Text = $"Sorted {System.IO.Path.GetFileName(path)} → {category}");
+    }
+
+    private void UpdateWatchUi()
+    {
+        var running = _services.Watcher.IsRunning;
+        WatchToggle.IsChecked = running;
+        WatchText.Text = running ? "Watching" : "Watch folders";
+        WatchLabel.Text = running ? "Live" : "";
     }
 }
