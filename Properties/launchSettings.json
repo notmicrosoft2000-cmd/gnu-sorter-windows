@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "GnuSorter (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "GnuSorter (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

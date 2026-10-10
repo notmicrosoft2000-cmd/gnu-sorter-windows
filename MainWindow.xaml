@@ -1,0 +1,25 @@
+<Window x:Class="GnuSorter.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+        Title="GNU Sorter for Windows">
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="BaseAlt"/>
+    </Window.SystemBackdrop>
+
+    <Grid>
+        <controls:NavigationView x:Name="NavView"
+                                 IsBackButtonVisible="Collapsed"
+                                 PaneDisplayMode="Top"
+                                 SelectionChanged="NavView_SelectionChanged"
+                                 IsSettingsVisible="True">
+            <controls:NavigationView.MenuItems>
+                <controls:NavigationViewItem Content="Folders" Tag="FoldersView" IsSelected="True"/>
+                <controls:NavigationViewItem Content="Rules" Tag="RulesView"/>
+                <controls:NavigationViewItem Content="Activity" Tag="ActivityView"/>
+            </controls:NavigationView.MenuItems>
+
+            <controls:Frame x:Name="ContentFrame"/>
+        </controls:NavigationView>
+    </Grid>
+</Window>
