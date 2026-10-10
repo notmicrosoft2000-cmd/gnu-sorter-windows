@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Needed to create/update the GitHub Release with the built .exe.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-2022

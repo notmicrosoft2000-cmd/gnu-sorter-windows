@@ -40,9 +40,12 @@ existing configuration can be reused.
 
 ## Download
 
-- **Releases:** https://github.com/notmicrosoft2000-cmd/gnu-sorter-windows/releases
+- **Direct download (always the latest build):**
+  https://github.com/notmicrosoft2000-cmd/gnu-sorter-windows/releases/latest/download/gnu-sorter-windows.exe
+- **All releases:** https://github.com/notmicrosoft2000-cmd/gnu-sorter-windows/releases
 - **CI builds:** triggered on `v*` tags via GitHub Actions; also run manually from
-  the Actions tab.
+  the Actions tab. Publishing a release requires the repo's workflow permissions to
+  be **Read and write** (Settings → Actions → General → Workflow permissions).
 
 ## Build locally (Windows)
 
