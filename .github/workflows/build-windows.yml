@@ -21,20 +21,30 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Restore
-        run: dotnet restore gnu-sorter-windows.csproj
-
+      # Build/publish with MSBuild rather than `dotnet build`/`dotnet publish`.
+      # The WinUI XAML compiler (XamlCompiler.exe) is known to fail with a silent
+      # "exited with code 1" (MSB3073) on a clean .NET CLI build, while MSBuild
+      # succeeds for the same project.
+      # https://github.com/microsoft/microsoft-ui-xaml/issues/11183
       - name: Build (x64)
-        run: dotnet build gnu-sorter-windows.csproj -c Release -r win-x64 -p:Platform=x64
+        run: >
+          msbuild gnu-sorter-windows.csproj
+          /restore /t:Build
+          /p:Configuration=Release /p:Platform=x64
+          /p:RuntimeIdentifier=win-x64
+          /v:minimal /nologo
 
       - name: Publish (x64, self-contained single-file)
         run: >
-          dotnet publish gnu-sorter-windows.csproj
-          -c Release -r win-x64 -p:Platform=x64
-          -p:SelfContained=true -p:WindowsAppSDKSelfContained=true
-          -p:WindowsPackageType=None -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -o publish/win-x64
+          msbuild gnu-sorter-windows.csproj
+          /t:Publish
+          /p:Configuration=Release /p:Platform=x64
+          /p:RuntimeIdentifier=win-x64
+          /p:SelfContained=true /p:WindowsAppSDKSelfContained=true
+          /p:WindowsPackageType=None /p:PublishSingleFile=true
+          /p:IncludeNativeLibrariesForSelfExtract=true
+          /p:PublishDir=publish\win-x64\
+          /v:minimal /nologo
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
