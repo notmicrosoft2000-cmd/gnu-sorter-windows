@@ -20,6 +20,12 @@
                     <TextBlock Text="Undo last" />
                 </StackPanel>
             </Button>
+            <Button x:Name="UndoSweepButton" Click="UndoSweep_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <SymbolIcon Symbol="Undo" />
+                    <TextBlock Text="Undo last sweep" />
+                </StackPanel>
+            </Button>
             <Button Click="Refresh_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <SymbolIcon Symbol="Refresh" />
@@ -44,6 +50,8 @@
                                 <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"
                                            TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{Binding Detail}" Opacity="0.7" FontSize="12"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Rule}" Opacity="0.55" FontSize="12"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
 

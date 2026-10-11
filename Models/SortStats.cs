@@ -20,4 +20,10 @@ public sealed class SortStats
 
     /// <summary>File names parked by this sweep (already counted in <see cref="Held"/>).</summary>
     public List<string> HeldFiles { get; set; } = new();
+
+    /// <summary>
+    /// Operation id shared by every journal entry this sweep wrote, so the whole
+    /// sweep can be reversed as one unit (e.g. from a toast "Undo" action).
+    /// </summary>
+    public string BatchId { get; set; } = "";
 }

@@ -22,31 +22,53 @@ public sealed partial class ActivityView : Page
     {
         _items.Clear();
 
+        var records = _services.Engine.Records();
+
         // Newest first.
-        foreach (var record in _services.Engine.History().AsEnumerable().Reverse())
+        foreach (var record in records.AsEnumerable().Reverse())
         {
             _items.Add(new ActivityItemViewModel
             {
                 FileName = record.FileName,
-                Detail = $"{record.Source}  →  {record.Destination}",
+                Detail = $"{record.Source}  →  {record.DestinationFolder}/",
                 Time = record.Timestamp,
+                Rule = string.IsNullOrEmpty(record.Rule) ? record.DestinationFolder : record.Rule,
+                Batch = record.Batch,
             });
         }
 
         EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UndoButton.IsEnabled = _items.Count > 0;
+        UndoSweepButton.IsEnabled = records.Count > 0;
         Footnote.Text = $"{_items.Count} move(s) in the journal.";
     }
 
-    private void Undo_Click(object sender, RoutedEventArgs e)
+    private void Undo_Click(object sender, RoutedEventArgs e) =>
+        Undo(() => _services.Engine.Undo(dryRun: false, limit: 1), "move");
+
+    /// <summary>
+    /// Reverses the most recent sweep — the same call a toast notification's
+    /// "Undo" button would make (<see cref="SortEngine.UndoLastBatch"/>).
+    /// </summary>
+    private void UndoSweep_Click(object sender, RoutedEventArgs e) =>
+        Undo(() => _services.Engine.UndoLastBatch(), "sweep");
+
+    private void Undo(Func<int> restore, string what)
     {
         try
         {
-            var count = _services.Engine.Undo(dryRun: false, limit: 1);
-            StatusBar.Severity = count > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
-            StatusBar.Message = count > 0
-                ? "Restored 1 file."
-                : "The last move could not be reversed (the file changed).";
+            var count = restore();
+            if (count > 0)
+            {
+                StatusBar.Severity = InfoBarSeverity.Success;
+                StatusBar.Message = $"Restored {count} file(s) from the last {what}.";
+            }
+            else
+            {
+                StatusBar.Severity = InfoBarSeverity.Informational;
+                StatusBar.Message =
+                    $"Nothing restored from the last {what} (already back, or the file changed).";
+            }
             StatusBar.IsOpen = true;
             Reload();
         }

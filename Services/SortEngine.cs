@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -26,6 +27,12 @@ public sealed class SortEngine
     private const double MaxExtraSettle = 60.0;  // ... capped at one extra minute
     private const double MtimeTolerance = 0.25;  // s — a rewrite bumps mtime
 
+    // Journal v2 (mirrors the Python engine so the two apps share one format).
+    private const int JournalVersion = 2;
+    private const long RotateBytes = 1_000_000;   // trim the journal once it grows past ~1 MB
+    private const int RotateKeep = 2500;          // ...keeping the most recent entries
+    private const double MtimeMatchTolerance = 2.0; // s — coarse filesystems vs. journal mtime
+
     /// <summary>
     /// How long a file of <paramref name="sizeBytes"/> must keep its size and
     /// mtime still before it is trusted. A 3 GB download settles for
@@ -46,6 +53,13 @@ public sealed class SortEngine
         var extra = (mb - LargeFileMb) / 100.0 * ExtraPer100Mb;
         return baseSeconds + Math.Min(extra, MaxExtraSettle);
     }
+
+    /// <summary>
+    /// Unix-epoch seconds for a UTC time — the unit the cross-platform journal
+    /// stores mtimes in (matching Python's <c>os.stat().st_mtime</c>).
+    /// </summary>
+    private static double ToUnixSeconds(DateTime utc) =>
+        (utc - DateTime.UnixEpoch).TotalSeconds;
 
     /// <summary>
     /// Windows-only signal: true when another process currently holds the file
@@ -93,10 +107,29 @@ public sealed class SortEngine
     private static readonly JsonSerializerOptions JournalJson = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    // Selector parsing: "30m", "2h", "7d" for durations, and
+    // "YYYY-MM-DD" / "YYYY-MM-DD HH:MM:SS" for absolute cut-offs.
+    private static readonly Regex DurationRegex = new(
+        @"^(\d+)\s*([smhdw])$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly string[] TimestampFormats =
+        { "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd" };
 
     private sealed class JournalEntry
     {
+        [JsonPropertyName("v")]
+        public int Version { get; set; } = 1;
+
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("batch")]
+        public string? Batch { get; set; }
+
         [JsonPropertyName("ts")]
         public string Ts { get; set; } = "";
 
@@ -105,6 +138,18 @@ public sealed class SortEngine
 
         [JsonPropertyName("dest")]
         public string Dest { get; set; } = "";
+
+        [JsonPropertyName("size")]
+        public long? Size { get; set; }
+
+        [JsonPropertyName("mtime")]
+        public double? Mtime { get; set; }
+
+        [JsonPropertyName("rule")]
+        public string? Rule { get; set; }
+
+        [JsonPropertyName("root")]
+        public string? Root { get; set; }
     }
 
     private readonly ConfigStore _config;
@@ -367,7 +412,7 @@ public sealed class SortEngine
         return fullCandidate.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
     }
 
-    public string SortFile(string path, string root, bool dryRun = false)
+    public string SortFile(string path, string root, bool dryRun = false, string? batch = null)
     {
         var category = Categorize(Path.GetFileName(path), EffectiveRules(root));
         var safe = SafeCategoryName(category) ?? "Needs-review";
@@ -388,9 +433,28 @@ public sealed class SortEngine
             return safe;
         }
 
+        // Capture the source metadata before the move so restore can verify the
+        // file came back unchanged (and detect an already-restored original).
+        long? size = null;
+        double? mtime = null;
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Exists)
+            {
+                size = info.Length;
+                mtime = ToUnixSeconds(info.LastWriteTimeUtc);
+            }
+        }
+        catch (Exception)
+        {
+            // Metadata is a nice-to-have; never block the move over it.
+        }
+
         Directory.CreateDirectory(destDir);
         File.Move(path, destination);
-        Journal(path, destination);
+        Journal(path, destination, safe, root,
+            batch ?? Guid.NewGuid().ToString("N"), size, mtime);
         return safe;
     }
 
@@ -403,6 +467,11 @@ public sealed class SortEngine
         var minStable = settings.MinStableSeconds;
         var interval = settings.StabilityInterval;
         var cautious = settings.CautiousDownloads;
+
+        // One operation id for every move this sweep makes, so undo can treat
+        // the whole sweep as a single, reversible unit.
+        var batch = Guid.NewGuid().ToString("N");
+        stats.BatchId = batch;
 
         foreach (var root in roots)
         {
@@ -532,7 +601,7 @@ public sealed class SortEngine
             {
                 try
                 {
-                    var category = SortFile(entry, root, dryRun);
+                    var category = SortFile(entry, root, dryRun, batch);
                     stats.Moved++;
                     if (category == "Needs-review")
                     {
@@ -549,21 +618,152 @@ public sealed class SortEngine
         return stats;
     }
 
-    // -- journal / undo --------------------------------------------------
+    // -- journal / undo (v2) ---------------------------------------------
 
-    private void Journal(string source, string destination)
+    private void Journal(string source, string destination, string rule, string root,
+        string batch, long? size, double? mtime)
     {
         lock (_journalLock)
         {
             Directory.CreateDirectory(_config.DataDir);
             var entry = new JournalEntry
             {
+                Version = JournalVersion,
+                Id = Guid.NewGuid().ToString("N"),
+                Batch = batch,
                 Ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 Src = source,
                 Dest = destination,
+                Size = size,
+                Mtime = mtime,
+                Rule = rule,
+                Root = root,
             };
-            var line = JsonSerializer.Serialize(entry, JournalJson) + "\n";
-            File.AppendAllText(_config.HistoryPath, line);
+            File.AppendAllText(_config.HistoryPath, Serialize(entry) + "\n");
+            try
+            {
+                if (new FileInfo(_config.HistoryPath).Length > RotateBytes)
+                {
+                    RotateJournal();
+                }
+            }
+            catch (IOException)
+            {
+                // A stat race must never fail a completed move.
+            }
+        }
+    }
+
+    private static string Serialize(JournalEntry entry) =>
+        JsonSerializer.Serialize(entry, JournalJson);
+
+    /// <summary>Parse one journal line into an entry (any schema version), else null.</summary>
+    private static JournalEntry? ParseEntry(string raw)
+    {
+        var line = raw.Trim();
+        if (line.Length == 0)
+        {
+            return null;
+        }
+        if (line.StartsWith('{'))                       // v1 / v2 JSON
+        {
+            try
+            {
+                var entry = JsonSerializer.Deserialize<JournalEntry>(line, JournalJson);
+                if (entry is null || string.IsNullOrEmpty(entry.Src)
+                    || string.IsNullOrEmpty(entry.Dest))
+                {
+                    return null;
+                }
+                return entry;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+        var parts = line.Split('\t');                   // legacy tab-separated (v0)
+        if (parts.Length < 3)
+        {
+            return null;
+        }
+        return new JournalEntry
+        {
+            Version = 0,
+            Ts = parts[0],
+            Src = parts[1],
+            Dest = string.Join("\t", parts[2..]),
+        };
+    }
+
+    /// <summary>Parsed entries in file order; malformed lines are dropped.</summary>
+    private List<JournalEntry> ReadJournal()
+    {
+        var entries = new List<JournalEntry>();
+        if (!File.Exists(_config.HistoryPath))
+        {
+            return entries;
+        }
+        foreach (var raw in File.ReadAllLines(_config.HistoryPath))
+        {
+            var entry = ParseEntry(raw);
+            if (entry is not null)
+            {
+                entries.Add(entry);
+            }
+        }
+        return entries;
+    }
+
+    private void WriteJournal(IEnumerable<JournalEntry> entries)
+    {
+        Directory.CreateDirectory(_config.DataDir);
+        var sb = new StringBuilder();
+        foreach (var entry in entries)
+        {
+            sb.Append(Serialize(entry)).Append('\n');
+        }
+        File.WriteAllText(_config.HistoryPath, sb.ToString());
+    }
+
+    /// <summary>Trim the journal to the most recent entries once it grows too large.</summary>
+    private void RotateJournal()
+    {
+        var loaded = ReadJournal();
+        var kept = loaded.Count > RotateKeep
+            ? loaded.Skip(loaded.Count - RotateKeep).ToList()
+            : loaded;
+        WriteJournal(kept);
+    }
+
+    /// <summary>Drop malformed lines; returns how many lines were removed.</summary>
+    public int RepairJournal()
+    {
+        lock (_journalLock)
+        {
+            if (!File.Exists(_config.HistoryPath))
+            {
+                return 0;
+            }
+            var kept = new List<JournalEntry>();
+            var dropped = 0;
+            foreach (var line in File.ReadAllLines(_config.HistoryPath))
+            {
+                var entry = ParseEntry(line);
+                if (entry is null)
+                {
+                    dropped++;
+                }
+                else
+                {
+                    kept.Add(entry);
+                }
+            }
+            if (dropped > 0)
+            {
+                WriteJournal(kept);
+            }
+            return dropped;
         }
     }
 
@@ -571,51 +771,7 @@ public sealed class SortEngine
     {
         lock (_journalLock)
         {
-            if (!File.Exists(_config.HistoryPath))
-            {
-                return new List<MoveRecord>();
-            }
-            var rows = new List<MoveRecord>();
-            foreach (var raw in File.ReadAllLines(_config.HistoryPath))
-            {
-                var line = raw.Trim();
-                if (line.Length == 0)
-                {
-                    continue;
-                }
-                if (line.StartsWith('{'))               // current JSON format
-                {
-                    try
-                    {
-                        var entry = JsonSerializer.Deserialize<JournalEntry>(line);
-                        if (entry is not null)
-                        {
-                            rows.Add(new MoveRecord
-                            {
-                                Timestamp = entry.Ts,
-                                Source = entry.Src,
-                                Destination = entry.Dest,
-                            });
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        // ignore malformed lines
-                    }
-                    continue;
-                }
-                var parts = line.Split('\t');           // legacy tab format
-                if (parts.Length < 3)
-                {
-                    continue;
-                }
-                rows.Add(new MoveRecord
-                {
-                    Timestamp = parts[0],
-                    Source = parts[1],
-                    Destination = string.Join("\t", parts[2..]),
-                });
-            }
+            var rows = ReadJournal().Select(ToRecord).ToList();
             if (limit is int max && max > 0 && rows.Count > max)
             {
                 return rows.Skip(rows.Count - max).ToList();
@@ -624,58 +780,261 @@ public sealed class SortEngine
         }
     }
 
-    public int Undo(bool dryRun = false, int? limit = null)
+    /// <summary>
+    /// Journal entries (chronological) matching the selectors: last <paramref name="limit"/>,
+    /// a <paramref name="since"/><paramref name="before"/> time window (<c>30m</c>, <c>2h</c>,
+    /// <c>7d</c> or <c>YYYY-MM-DD[ HH:MM:SS]</c>), a destination <paramref name="folder"/>,
+    /// a <paramref name="rule"/> name, or an operation <paramref name="batch"/> id.
+    /// </summary>
+    public List<MoveRecord> Records(int? limit = null, string? since = null,
+        string? before = null, string? folder = null, string? rule = null,
+        string? batch = null)
     {
         lock (_journalLock)
         {
-            if (!File.Exists(_config.HistoryPath))
+            return Select(ReadJournal(), limit, since, before, folder, rule, batch)
+                .Select(ToRecord).ToList();
+        }
+    }
+
+    private static MoveRecord ToRecord(JournalEntry entry) => new()
+    {
+        Id = entry.Id ?? "",
+        Version = entry.Version,
+        Batch = entry.Batch ?? "",
+        Timestamp = entry.Ts,
+        Source = entry.Src,
+        Destination = entry.Dest,
+        Size = entry.Size,
+        Mtime = entry.Mtime,
+        Rule = entry.Rule ?? "",
+        Root = entry.Root ?? "",
+    };
+
+    private static List<JournalEntry> Select(List<JournalEntry> loaded, int? limit,
+        string? since, string? before, string? folder, string? rule, string? batch)
+    {
+        if (limit is <= 0)                             // explicit "none"
+        {
+            return new List<JournalEntry>();
+        }
+        var rows = loaded;
+        if (!string.IsNullOrWhiteSpace(since))
+        {
+            var cutoff = DateTime.Now - ParseDuration(since);
+            rows = rows.Where(x => TryTimestamp(x.Ts, out var dt) && dt >= cutoff).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(before))
+        {
+            var cutoff = ParseBefore(before);
+            rows = rows.Where(x => TryTimestamp(x.Ts, out var dt) && dt < cutoff).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(folder))
+        {
+            var wanted = ConfigStore.NormalizeKey(folder);
+            rows = rows.Where(x => string.Equals(
+                    ConfigStore.NormalizeKey(Path.GetDirectoryName(x.Dest) ?? ""),
+                    wanted, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(rule))
+        {
+            var wanted = rule.ToLowerInvariant();
+            rows = rows.Where(x => (x.Rule ?? "").ToLowerInvariant() == wanted).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(batch))
+        {
+            var wanted = batch.ToLowerInvariant();
+            rows = rows.Where(x => (x.Batch ?? "").ToLowerInvariant() == wanted).ToList();
+        }
+        if (limit is int n && n > 0 && rows.Count > n)
+        {
+            rows = rows.Skip(rows.Count - n).ToList();
+        }
+        return rows;
+    }
+
+    public int Undo(bool dryRun = false, int? limit = null, string? since = null,
+        string? before = null, string? folder = null, string? rule = null,
+        string? batch = null)
+    {
+        lock (_journalLock)
+        {
+            var loaded = ReadJournal();
+            if (loaded.Count == 0)
             {
                 return 0;
             }
-
-            var all = History();
-            if (all.Count == 0)
+            var toUndo = Select(loaded, limit, since, before, folder, rule, batch);
+            if (toUndo.Count == 0)
             {
                 return 0;
             }
-
-            var count = limit is > 0 ? Math.Min(limit.Value, all.Count) : all.Count;
-            var toUndo = all.Skip(all.Count - count).ToList();
-            var rest = all.Take(all.Count - count).ToList();
+            var selected = new HashSet<JournalEntry>(toUndo, ReferenceEqualityComparer.Instance);
+            var rest = loaded.Where(x => !selected.Contains(x)).ToList();
             var restored = 0;
 
+            // Reverse order: the most recent move is put back first.
             for (var i = toUndo.Count - 1; i >= 0; i--)
             {
-                var row = toUndo[i];
-                if (File.Exists(row.Destination) && !File.Exists(row.Source))
+                var entry = toUndo[i];
+                if (!File.Exists(entry.Dest))
                 {
+                    rest.Add(entry);                    // no longer there → keep it
+                    continue;
+                }
+                if (entry.Size is long expected)
+                {
+                    try
+                    {
+                        if (new FileInfo(entry.Dest).Length != expected)
+                        {
+                            Console.Error.WriteLine(
+                                $"* {entry.Dest} changed size since sorting; restoring anyway");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // stat race → proceed with the restore
+                    }
+                }
+                if (File.Exists(entry.Src))
+                {
+                    if (IsSameFile(entry, entry.Src))
+                    {
+                        continue;                       // already back → drop it
+                    }
+                    var target = UniquePath(entry.Src); // collision-safe restore
                     if (!dryRun)
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(row.Source) ?? ".");
-                        File.Move(row.Destination, row.Source, overwrite: false);
+                        try
+                        {
+                            EnsureParent(target);
+                            File.Move(entry.Dest, target);
+                        }
+                        catch (Exception)
+                        {
+                            rest.Add(entry);
+                            continue;
+                        }
                     }
                     restored++;
+                    continue;
                 }
-                else
+                if (dryRun)
                 {
-                    rest.Add(row); // not reversible → keep in the journal
+                    restored++;
+                    continue;
                 }
+                try
+                {
+                    EnsureParent(entry.Src);
+                    File.Move(entry.Dest, entry.Src);
+                }
+                catch (Exception)
+                {
+                    rest.Add(entry);
+                    continue;
+                }
+                restored++;
             }
 
             if (!dryRun)
             {
-                var ordered = rest.OrderBy(r => r.Timestamp, StringComparer.Ordinal);
-                var sb = new StringBuilder();
-                foreach (var row in ordered)
-                {
-                    sb.Append(JsonSerializer.Serialize(
-                        new JournalEntry { Ts = row.Timestamp, Src = row.Source, Dest = row.Destination },
-                        JournalJson)).Append('\n');
-                }
-                Directory.CreateDirectory(_config.DataDir);
-                File.WriteAllText(_config.HistoryPath, sb.ToString());
+                WriteJournal(rest);
             }
             return restored;
         }
     }
+
+    /// <summary>
+    /// Reverse the most recent operation — a whole sweep, or a single watched
+    /// move. This is the entry point a toast notification's "Undo" button calls.
+    /// Returns how many files were restored (0 when there is nothing to undo).
+    /// </summary>
+    public int UndoLastBatch(bool dryRun = false)
+    {
+        lock (_journalLock)
+        {
+            var last = ReadJournal().LastOrDefault();
+            if (last is null)
+            {
+                return 0;
+            }
+            // A pre-v2 single move has no batch id → just reverse that entry.
+            return string.IsNullOrEmpty(last.Batch)
+                ? Undo(dryRun, limit: 1)
+                : Undo(dryRun, batch: last.Batch);
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> looks like the very file the journal
+    /// recorded (size and mtime both match) — i.e. it is already back home.
+    /// </summary>
+    private static bool IsSameFile(JournalEntry entry, string path)
+    {
+        if (entry.Size is null || entry.Mtime is null)
+        {
+            return false;
+        }
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                return false;
+            }
+            return info.Length == entry.Size.Value
+                && Math.Abs(ToUnixSeconds(info.LastWriteTimeUtc) - entry.Mtime.Value)
+                    <= MtimeMatchTolerance;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static void EnsureParent(string path)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+    }
+
+    private static TimeSpan ParseDuration(string text)
+    {
+        var match = DurationRegex.Match(text.Trim());
+        if (!match.Success)
+        {
+            throw new FormatException($"bad duration '{text}' (use e.g. 30m, 2h, 7d)");
+        }
+        var n = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        return match.Groups[2].Value.ToLowerInvariant() switch
+        {
+            "s" => TimeSpan.FromSeconds(n),
+            "m" => TimeSpan.FromMinutes(n),
+            "h" => TimeSpan.FromHours(n),
+            "d" => TimeSpan.FromDays(n),
+            "w" => TimeSpan.FromDays(n * 7),
+            _ => throw new FormatException($"bad duration '{text}' (use e.g. 30m, 2h, 7d)"),
+        };
+    }
+
+    private static DateTime ParseBefore(string text)
+    {
+        if (DateTime.TryParseExact(text.Trim(), TimestampFormats,
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+        {
+            return dt;
+        }
+        throw new FormatException(
+            $"bad timestamp '{text}' (use YYYY-MM-DD or 'YYYY-MM-DD HH:MM:SS')");
+    }
+
+    private static bool TryTimestamp(string ts, out DateTime dt) =>
+        DateTime.TryParseExact(ts, TimestampFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out dt);
 }

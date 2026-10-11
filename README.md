@@ -15,7 +15,8 @@ JSON configuration format as the Linux version.
 - **Quick presets** — GNOME defaults · Photography · Code projects · Empty.
 - **Background watcher** — watches each folder and sorts new files once they are
   stable, skipping in-progress downloads.
-- **Activity + undo** — every move is journaled and can be reversed.
+- **Activity + restore** — every move is journaled (v2: rule, size, mtime and
+  operation id) and can be reversed — one move, or the whole last sweep.
 - **Safe by design** — stability window, skip hidden/in-progress/symlinked files,
   and collision-safe destination names (`name (1).ext`).
 - **Dry-run mode** — preview what "Sort now" would do without moving anything.
