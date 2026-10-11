@@ -30,6 +30,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _checkForUpdates = true;
 
+    /// <summary>0 = system default, 1 = light, 2 = dark (bound to the ComboBox).</summary>
+    [ObservableProperty]
+    private int _colorSchemeIndex;
+
     [ObservableProperty]
     private bool _startOnLogin;
 
@@ -41,6 +45,14 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>The release channel this build belongs to (indev/alpha/…/release).</summary>
     public string Channel => AppInfo.Channel;
+
+    /// <summary>"default" | "light" | "dark", derived from the ComboBox index.</summary>
+    public string ColorScheme => ColorSchemeIndex switch
+    {
+        1 => ThemeService.Light,
+        2 => ThemeService.Dark,
+        _ => ThemeService.Default,
+    };
 
     public SettingsViewModel(AppServices services)
     {
@@ -58,6 +70,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         DryRunDefault = settings.DryRunDefault;
         CautiousDownloads = settings.CautiousDownloads;
         CheckForUpdates = settings.CheckForUpdates;
+        ColorSchemeIndex = settings.ColorScheme switch
+        {
+            "light" => 1,
+            "dark" => 2,
+            _ => 0,
+        };
         StartOnLogin = StartupService.IsEnabled();
         ConfigPath = _services.Config.ConfigDir;
     }
@@ -73,6 +91,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             DryRunDefault = DryRunDefault,
             CautiousDownloads = CautiousDownloads,
             CheckForUpdates = CheckForUpdates,
+            ColorScheme = ColorScheme,
         });
     }
 }

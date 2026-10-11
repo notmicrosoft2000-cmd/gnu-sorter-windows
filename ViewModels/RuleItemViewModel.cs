@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.UI.Xaml.Media;
 using GnuSorter.Models;
 
 namespace GnuSorter.ViewModels;
@@ -22,4 +23,9 @@ public sealed partial class RuleItemViewModel : ObservableObject
     private bool _isVisible = true;
 
     public SortRule Rule { get; init; } = new();
+
+    /// <summary>Accent colour for the row, or null when the rule has none.</summary>
+    public SolidColorBrush? ColorBrush { get; init; }
+
+    public bool HasColor => ColorBrush is not null;
 }

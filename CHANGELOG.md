@@ -19,10 +19,14 @@ with the same pre-release channels as the Linux app:
   (`indev`/`alpha`/`beta`/`rc`/`release`). A new **Check for updates
   automatically** switch lets you opt out of the startup check; the manual
   *Check for updates* button is unaffected.
+- **Appearance**: a Theme choice (System default / Light / Dark) in Settings,
+  applied via the window's requested theme.
+- **Per-rule accent colour**: rules can carry a hex colour, shown as a dot on
+  the rule row and edited in the rule dialog (mirrors the Linux `#rrggbb`).
 
 ### Changed
 - Version scheme aligned with Linux (`X.Y.Z-dev.N` / `-alpha.N` / `-beta.N` /
   `-rc.N` / `X.Y.Z`). The current build is `3.0.0-dev.0` (indev).
 
-> Entries for the journal and customization work land here as the Windows
-> mirror of Linux Phase 4 proceeds.
+> Entries for the journal work land here as the Windows mirror of Linux
+> Phase 4 proceeds.

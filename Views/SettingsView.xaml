@@ -6,6 +6,17 @@
         <StackPanel Margin="24" Spacing="16" MaxWidth="720" HorizontalAlignment="Left">
             <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
 
+            <TextBlock Text="Appearance" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <ComboBox Header="Theme"
+                      MinWidth="220"
+                      SelectedIndex="{x:Bind ViewModel.ColorSchemeIndex, Mode=TwoWay}">
+                <ComboBoxItem Content="System default" />
+                <ComboBoxItem Content="Light" />
+                <ComboBoxItem Content="Dark" />
+            </ComboBox>
+            <TextBlock Text="Applied when you save. System default follows Windows."
+                       FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+
             <TextBlock Text="Behavior" Style="{StaticResource SubtitleTextBlockStyle}" />
 
             <NumberBox Header="Stability window (seconds)"

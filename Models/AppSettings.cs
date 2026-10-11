@@ -18,6 +18,11 @@ public sealed class AppSettings
     /// <summary>Look for a newer build in this channel shortly after launch.</summary>
     public bool CheckForUpdates { get; set; } = true;
 
+    /// <summary>
+    /// Appearance: "default" (follow Windows), "light" or "dark".
+    /// </summary>
+    public string ColorScheme { get; set; } = "default";
+
     public AppSettings Clone() => new()
     {
         MinStableSeconds = MinStableSeconds,
@@ -27,5 +32,6 @@ public sealed class AppSettings
         DryRunDefault = DryRunDefault,
         CautiousDownloads = CautiousDownloads,
         CheckForUpdates = CheckForUpdates,
+        ColorScheme = ColorScheme,
     };
 }

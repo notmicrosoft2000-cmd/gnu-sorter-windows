@@ -153,6 +153,7 @@ public sealed partial class RulesView : Page
                 IsCustom = _custom,
                 IsNameMatch = rule.IsNameMatch,
                 Rule = rule,
+                ColorBrush = ParseColor(rule.Color),
             };
 
             if (rule.IsNameMatch)
@@ -370,6 +371,12 @@ public sealed partial class RulesView : Page
             IsOn = string.Equals(existing?.MatchMode, "all",
                 StringComparison.OrdinalIgnoreCase),
         };
+        var colorBox = new TextBox
+        {
+            Header = "Accent colour for this rule (hex, optional)",
+            Text = existing?.Color ?? "",
+            PlaceholderText = "#3b82f6",
+        };
         var error = new TextBlock
         {
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.OrangeRed),
@@ -387,6 +394,7 @@ public sealed partial class RulesView : Page
         panel.Children.Add(daysBox);
         panel.Children.Add(enabledSwitch);
         panel.Children.Add(matchAllSwitch);
+        panel.Children.Add(colorBox);
         panel.Children.Add(error);
 
         var dialog = new ContentDialog
@@ -443,6 +451,12 @@ public sealed partial class RulesView : Page
             if (minMb is not null && maxMb is not null && minMb > maxMb)
             {
                 Fail(error, "Minimum size cannot be larger than the maximum.", args);
+                return;
+            }
+            if (colorBox.Text.Trim().Length > 0
+                && ParseColor(colorBox.Text) is null)
+            {
+                Fail(error, "Accent colour must be a hex value like #3b82f6.", args);
             }
         };
 
@@ -463,7 +477,9 @@ public sealed partial class RulesView : Page
             Enabled = enabledSwitch.IsOn ? (bool?)null : false,
             MatchAll = existing?.MatchAll ?? false,
             Icon = existing?.Icon,
-            Color = existing?.Color,
+            Color = string.IsNullOrWhiteSpace(colorBox.Text)
+                ? null
+                : colorBox.Text.Trim(),
             MatchMode = matchAllSwitch.IsOn ? "all" : null,
         };
     }
@@ -502,6 +518,41 @@ public sealed partial class RulesView : Page
             return true;
         }
         return false;
+    }
+
+    /// <summary>Parse "#rgb" / "#rrggbb" into a brush; null when empty or invalid.</summary>
+    private static SolidColorBrush? ParseColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+        var text = value.Trim().TrimStart('#');
+        try
+        {
+            byte r, g, b;
+            if (text.Length == 3)
+            {
+                r = Convert.ToByte(new string(text[0], 2), 16);
+                g = Convert.ToByte(new string(text[1], 2), 16);
+                b = Convert.ToByte(new string(text[2], 2), 16);
+            }
+            else if (text.Length >= 6)
+            {
+                r = Convert.ToByte(text.Substring(0, 2), 16);
+                g = Convert.ToByte(text.Substring(2, 2), 16);
+                b = Convert.ToByte(text.Substring(4, 2), 16);
+            }
+            else
+            {
+                return null;
+            }
+            return new SolidColorBrush(Windows.UI.Color.FromArgb(255, r, g, b));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static async Task<string?> PickFolderAsync()

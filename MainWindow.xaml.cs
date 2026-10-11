@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Funnel";
+        ThemeService.Apply(_services.Config.LoadSettings().ColorScheme);
 
         try
         {

@@ -6,13 +6,21 @@
         <DataTemplate x:Key="RuleTemplate">
             <Grid ColumnSpacing="8" Padding="4,6">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <Ellipse Grid.Column="0"
+                         Width="12"
+                         Height="12"
+                         VerticalAlignment="Center"
+                         Fill="{Binding ColorBrush}"
+                         Visibility="{Binding HasColor, Converter={StaticResource BoolToVisibility}}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding Subtitle}"
                                Opacity="0.7"
@@ -20,11 +28,11 @@
                                TextTrimming="CharacterEllipsis" />
                 </StackPanel>
 
-                <Button Grid.Column="1" Content="Edit" Click="EditRule_Click" />
-                <Button Grid.Column="2" Click="DuplicateRule_Click" ToolTipService.ToolTip="Duplicate rule">
+                <Button Grid.Column="2" Content="Edit" Click="EditRule_Click" />
+                <Button Grid.Column="3" Click="DuplicateRule_Click" ToolTipService.ToolTip="Duplicate rule">
                     <SymbolIcon Symbol="Copy" />
                 </Button>
-                <Button Grid.Column="3" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete rule">
+                <Button Grid.Column="4" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete rule">
                     <SymbolIcon Symbol="Delete" />
                 </Button>
             </Grid>

@@ -22,6 +22,7 @@ public sealed partial class SettingsView : Page
         try
         {
             ViewModel.Save();
+            ThemeService.Apply(ViewModel.ColorScheme);
 
             if (ViewModel.StartOnLogin)
             {
