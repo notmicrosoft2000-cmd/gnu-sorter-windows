@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
@@ -123,12 +124,21 @@ public sealed partial class RulesView : Page
     private void RefreshRules()
     {
         var query = SearchBox.Text?.Trim() ?? "";
+        var counts = SafeRuleCounts();
         _extItems.Clear();
         _nameItems.Clear();
 
         foreach (var rule in _currentRules)
         {
-            var subtitle = DescribeRule(rule);
+            var subtitle = RuleText.Describe(rule);
+            if (counts.TryGetValue(rule.Name, out var count) && count > 0)
+            {
+                subtitle += $"  \u00b7  {count} sorted";
+            }
+            if (rule.Enabled is false)
+            {
+                subtitle += "  \u00b7  paused";
+            }
             if (query.Length > 0
                 && !rule.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !subtitle.Contains(query, StringComparison.OrdinalIgnoreCase))
@@ -156,18 +166,16 @@ public sealed partial class RulesView : Page
         }
     }
 
-    private static string DescribeRule(SortRule rule)
+    private Dictionary<string, int> SafeRuleCounts()
     {
-        var parts = new List<string>();
-        if (rule.Extensions.Count > 0)
+        try
         {
-            parts.Add(string.Join(", ", rule.Extensions.Select(e => "." + e.TrimStart('.'))));
+            return _services.Engine.RuleCounts();
         }
-        if (rule.IsNameMatch)
+        catch (Exception)
         {
-            parts.Add($"matches /{rule.MatchNameRegex}/");
+            return new Dictionary<string, int>();
         }
-        return parts.Count == 0 ? "no matchers" : string.Join("  ·  ", parts);
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => RefreshRules();
@@ -208,8 +216,51 @@ public sealed partial class RulesView : Page
         item.Rule.Name = edited.Name;
         item.Rule.Extensions = edited.Extensions;
         item.Rule.MatchNameRegex = edited.MatchNameRegex;
+        item.Rule.ExcludeNameRegex = edited.ExcludeNameRegex;
+        item.Rule.MinSizeMb = edited.MinSizeMb;
+        item.Rule.MaxSizeMb = edited.MaxSizeMb;
+        item.Rule.ModifiedWithinDays = edited.ModifiedWithinDays;
+        item.Rule.Enabled = edited.Enabled;
+        item.Rule.MatchAll = edited.MatchAll;
+        item.Rule.Icon = edited.Icon;
+        item.Rule.Color = edited.Color;
+        item.Rule.MatchMode = edited.MatchMode;
         Persist();
         RefreshRules();
+    }
+
+    private void DuplicateRule_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: RuleItemViewModel item })
+        {
+            return;
+        }
+
+        var copy = item.Rule.Clone();
+        copy.Name = UniqueName(copy.Name);
+        var index = _currentRules.IndexOf(item.Rule);
+        if (index >= 0)
+        {
+            _currentRules.Insert(index + 1, copy);
+        }
+        else
+        {
+            _currentRules.Add(copy);
+        }
+        Persist();
+        RefreshRules();
+    }
+
+    private string UniqueName(string baseName)
+    {
+        var candidate = $"{baseName} copy";
+        var n = 2;
+        while (_currentRules.Any(r =>
+                   string.Equals(r.Name, candidate, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidate = $"{baseName} copy {n++}";
+        }
+        return candidate;
     }
 
     private void DeleteRule_Click(object sender, RoutedEventArgs e)
@@ -232,6 +283,30 @@ public sealed partial class RulesView : Page
             Text = existing?.Name ?? "",
             PlaceholderText = "Photos",
         };
+        var browseButton = new Button
+        {
+            Content = "Choose\u2026",
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
+        var nameRow = new Grid { ColumnSpacing = 8 };
+        nameRow.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star),
+        });
+        nameRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(nameBox, 0);
+        Grid.SetColumn(browseButton, 1);
+        nameRow.Children.Add(nameBox);
+        nameRow.Children.Add(browseButton);
+        browseButton.Click += async (_, _) =>
+        {
+            var picked = await PickFolderAsync();
+            if (picked is not null)
+            {
+                nameBox.Text = RelativeDestination(picked);
+            }
+        };
+
         var extBox = new TextBox
         {
             Header = "File extensions",
@@ -244,6 +319,34 @@ public sealed partial class RulesView : Page
             Text = existing?.MatchNameRegex ?? "",
             PlaceholderText = "screenshot|capture",
         };
+        var excludeBox = new TextBox
+        {
+            Header = "Never match when the name matches (regex, optional)",
+            Text = existing?.ExcludeNameRegex ?? "",
+            PlaceholderText = "keep|draft",
+        };
+        var minBox = new TextBox
+        {
+            Header = "Minimum size in MB (optional)",
+            Text = existing?.MinSizeMb?.ToString(CultureInfo.InvariantCulture) ?? "",
+        };
+        var maxBox = new TextBox
+        {
+            Header = "Maximum size in MB (optional)",
+            Text = existing?.MaxSizeMb?.ToString(CultureInfo.InvariantCulture) ?? "",
+        };
+        var daysBox = new TextBox
+        {
+            Header = "Only files modified in the last N days (optional)",
+            Text = existing?.ModifiedWithinDays?.ToString(CultureInfo.InvariantCulture) ?? "",
+        };
+        var enabledSwitch = new ToggleSwitch
+        {
+            Header = "Enabled",
+            OnContent = "On",
+            OffContent = "Paused",
+            IsOn = existing?.Enabled is not false,
+        };
         var error = new TextBlock
         {
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.OrangeRed),
@@ -252,26 +355,36 @@ public sealed partial class RulesView : Page
         };
 
         var panel = new StackPanel { Spacing = 12, MinWidth = 380 };
-        panel.Children.Add(nameBox);
+        panel.Children.Add(nameRow);
         panel.Children.Add(extBox);
         panel.Children.Add(regexBox);
+        panel.Children.Add(excludeBox);
+        panel.Children.Add(minBox);
+        panel.Children.Add(maxBox);
+        panel.Children.Add(daysBox);
+        panel.Children.Add(enabledSwitch);
         panel.Children.Add(error);
 
         var dialog = new ContentDialog
         {
             Title = existing is null ? "Add rule" : "Edit rule",
-            Content = panel,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 520 },
             PrimaryButtonText = existing is null ? "Add" : "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
         };
 
+        double? minMb = null;
+        double? maxMb = null;
+        double? days = null;
+
         dialog.PrimaryButtonClick += (sender, args) =>
         {
             var name = nameBox.Text.Trim();
             var extensions = ParseExtensions(extBox.Text);
             var regex = regexBox.Text.Trim();
+            var exclude = excludeBox.Text.Trim();
 
             if (name.Length == 0)
             {
@@ -283,16 +396,29 @@ public sealed partial class RulesView : Page
                 Fail(error, "Add at least one extension or a name pattern.", args);
                 return;
             }
-            if (regex.Length > 0)
+            if (!ValidRegex(regex, error, args, "name pattern")
+                || !ValidRegex(exclude, error, args, "exclude pattern"))
             {
-                try
-                {
-                    _ = new Regex(regex);
-                }
-                catch (ArgumentException)
-                {
-                    Fail(error, "That regular expression is not valid.", args);
-                }
+                return;
+            }
+            if (!TryParseOptional(minBox.Text, out minMb))
+            {
+                Fail(error, "Minimum size must be a positive number.", args);
+                return;
+            }
+            if (!TryParseOptional(maxBox.Text, out maxMb))
+            {
+                Fail(error, "Maximum size must be a positive number.", args);
+                return;
+            }
+            if (!TryParseOptional(daysBox.Text, out days))
+            {
+                Fail(error, "Days must be a positive number.", args);
+                return;
+            }
+            if (minMb is not null && maxMb is not null && minMb > maxMb)
+            {
+                Fail(error, "Minimum size cannot be larger than the maximum.", args);
             }
         };
 
@@ -306,7 +432,94 @@ public sealed partial class RulesView : Page
             Name = nameBox.Text.Trim(),
             Extensions = ParseExtensions(extBox.Text),
             MatchNameRegex = string.IsNullOrWhiteSpace(regexBox.Text) ? null : regexBox.Text.Trim(),
+            ExcludeNameRegex = string.IsNullOrWhiteSpace(excludeBox.Text) ? null : excludeBox.Text.Trim(),
+            MinSizeMb = minMb,
+            MaxSizeMb = maxMb,
+            ModifiedWithinDays = days,
+            Enabled = enabledSwitch.IsOn ? (bool?)null : false,
+            MatchAll = existing?.MatchAll ?? false,
+            Icon = existing?.Icon,
+            Color = existing?.Color,
+            MatchMode = existing?.MatchMode,
         };
+    }
+
+    private static bool ValidRegex(string pattern, TextBlock error,
+        ContentDialogButtonClickEventArgs args, string label)
+    {
+        if (pattern.Length == 0)
+        {
+            return true;
+        }
+        try
+        {
+            _ = new Regex(pattern);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            Fail(error, $"That {label} is not a valid regular expression.", args);
+            return false;
+        }
+    }
+
+    private static bool TryParseOptional(string text, out double? value)
+    {
+        value = null;
+        text = text.Trim();
+        if (text.Length == 0)
+        {
+            return true;
+        }
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                out var parsed) && parsed > 0)
+        {
+            value = parsed;
+            return true;
+        }
+        return false;
+    }
+
+    private static async Task<string?> PickFolderAsync()
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads,
+            };
+            picker.FileTypeFilter.Add("*");
+            if (App.RootWindow is null)
+            {
+                return null;
+            }
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.RootWindow);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+            var folder = await picker.PickSingleFolderAsync();
+            return folder?.Path;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private string RelativeDestination(string pickedPath)
+    {
+        var pickedFull = Path.GetFullPath(pickedPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (_currentRoot is not null)
+        {
+            var rootFull = Path.GetFullPath(_currentRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (pickedFull.StartsWith(rootFull + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.GetRelativePath(_currentRoot, pickedFull)
+                    .Replace('\\', '/');
+            }
+        }
+        return Path.GetFileName(pickedFull);
     }
 
     private static void Fail(TextBlock error, string message, ContentDialogButtonClickEventArgs args)
@@ -457,7 +670,9 @@ public sealed partial class RulesView : Page
         panel.Children.Add(new TextBlock
         {
             Text = "Edit the rules as JSON. Each rule has a name, an extensions list, "
-                + "and an optional match_name_regex.",
+                + "and optional match_name_regex, exclude_name_regex, min_size_mb, "
+                + "max_size_mb, modified_within_days, enabled and match_all fields. "
+                + "UI-only icon and color hints are preserved.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.8,
         });

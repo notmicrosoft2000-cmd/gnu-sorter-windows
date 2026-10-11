@@ -173,6 +173,20 @@ public sealed class SortEngine
         /// <summary>Lower-case extensions with a leading dot, longest first.</summary>
         public string[] Extensions { get; init; } = Array.Empty<string>();
 
+        /// <summary>False means the rule is skipped entirely.</summary>
+        public bool Enabled { get; init; } = true;
+
+        /// <summary>Catch-all: matches every file.</summary>
+        public bool MatchAll { get; init; }
+
+        public Regex? ExcludeRegex { get; init; }
+
+        public double? MinMb { get; init; }
+
+        public double? MaxMb { get; init; }
+
+        public double? Days { get; init; }
+
         public bool IsNameMatch => NameRegex is not null;
     }
 
@@ -181,20 +195,6 @@ public sealed class SortEngine
         var compiled = new List<CompiledRule>();
         foreach (var rule in rules)
         {
-            Regex? regex = null;
-            if (!string.IsNullOrWhiteSpace(rule.MatchNameRegex))
-            {
-                try
-                {
-                    regex = new Regex(rule.MatchNameRegex, RegexOptions.IgnoreCase
-                        | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-                }
-                catch (ArgumentException)
-                {
-                    regex = null;
-                }
-            }
-
             var extensions = rule.Extensions
                 .Select(e => (e ?? "").Trim().TrimStart('.').ToLowerInvariant())
                 .Where(e => e.Length > 0)
@@ -205,12 +205,38 @@ public sealed class SortEngine
             compiled.Add(new CompiledRule
             {
                 Name = string.IsNullOrEmpty(rule.Name) ? "Other" : rule.Name,
-                NameRegex = regex,
+                NameRegex = TryCompile(rule.MatchNameRegex),
                 Extensions = extensions,
+                Enabled = rule.Enabled is not false,
+                MatchAll = rule.MatchAll,
+                ExcludeRegex = TryCompile(rule.ExcludeNameRegex),
+                MinMb = PositiveOrNull(rule.MinSizeMb),
+                MaxMb = PositiveOrNull(rule.MaxSizeMb),
+                Days = PositiveOrNull(rule.ModifiedWithinDays),
             });
         }
         return compiled;
     }
+
+    private static Regex? TryCompile(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return null;
+        }
+        try
+        {
+            return new Regex(pattern, RegexOptions.IgnoreCase
+                | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static double? PositiveOrNull(double? value) =>
+        value is double v && v > 0 ? v : null;
 
     public List<CompiledRule> EffectiveRules(string rootPath) =>
         Compile(_config.RulesFor(rootPath).Rules);
@@ -220,26 +246,102 @@ public sealed class SortEngine
     /// <summary>
     /// Destination folder for a file. <paramref name="rules"/> null means the
     /// template; an empty list means "no rules" (everything needs review).
+    /// <paramref name="info"/> (when given) powers the optional size/recency
+    /// bounds; rules that need it are skipped when it is not available.
     /// </summary>
-    public string Categorize(string fileName, IReadOnlyList<CompiledRule>? rules)
+    public string Categorize(string fileName, IReadOnlyList<CompiledRule>? rules,
+                             FileInfo? info = null)
     {
         var effective = rules ?? Compile(_config.LoadRules());
         var name = fileName.ToLowerInvariant();
-        foreach (var rule in effective)
+        double? sizeMb = null;
+        double? ageDays = null;
+        if (info is not null)
         {
-            if (rule.NameRegex is not null && rule.NameRegex.IsMatch(name))
+            try
             {
-                return rule.Name;
-            }
-            foreach (var ext in rule.Extensions)
-            {
-                if (name.EndsWith(ext, StringComparison.Ordinal))
+                if (info.Exists)
                 {
-                    return rule.Name;
+                    sizeMb = info.Length / (1024.0 * 1024.0);
+                    ageDays = (DateTime.UtcNow - info.LastWriteTimeUtc).TotalDays;
                 }
             }
+            catch (Exception)
+            {
+                // Metadata is a nice-to-have; a rule that needs it is skipped.
+            }
+        }
+
+        foreach (var rule in effective)
+        {
+            if (!rule.Enabled)
+            {
+                continue;
+            }
+
+            var matched = rule.MatchAll;
+            if (!matched && rule.NameRegex is not null && rule.NameRegex.IsMatch(name))
+            {
+                matched = true;
+            }
+            if (!matched)
+            {
+                foreach (var ext in rule.Extensions)
+                {
+                    if (name.EndsWith(ext, StringComparison.Ordinal))
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched)
+            {
+                continue;
+            }
+
+            if (rule.ExcludeRegex is not null && rule.ExcludeRegex.IsMatch(name))
+            {
+                continue;
+            }
+            if (rule.MinMb is not null || rule.MaxMb is not null)
+            {
+                if (sizeMb is null)
+                {
+                    continue;
+                }
+                if (rule.MinMb is double lo && sizeMb < lo)
+                {
+                    continue;
+                }
+                if (rule.MaxMb is double hi && sizeMb > hi)
+                {
+                    continue;
+                }
+            }
+            if (rule.Days is double days && (ageDays is null || ageDays > days))
+            {
+                continue;
+            }
+            return rule.Name;
         }
         return "Needs-review";
+    }
+
+    /// <summary>
+    /// Dry-run preview: map each file name to the destination it would sort
+    /// into. Used by the rules-page tester and the wizard; never touches disk.
+    /// </summary>
+    public Dictionary<string, string> Classify(
+        IEnumerable<string> names, IReadOnlyList<CompiledRule>? rules = null)
+    {
+        var effective = rules ?? Compile(_config.LoadRules());
+        var result = new Dictionary<string, string>();
+        foreach (var name in names)
+        {
+            result[name] = Categorize(name, effective);
+        }
+        return result;
     }
 
     public static bool LooksInProgress(string fileName)
@@ -414,7 +516,8 @@ public sealed class SortEngine
 
     public string SortFile(string path, string root, bool dryRun = false, string? batch = null)
     {
-        var category = Categorize(Path.GetFileName(path), EffectiveRules(root));
+        var info = new FileInfo(path);
+        var category = Categorize(Path.GetFileName(path), EffectiveRules(root), info);
         var safe = SafeCategoryName(category) ?? "Needs-review";
         if (safe != category)
         {
@@ -439,7 +542,6 @@ public sealed class SortEngine
         double? mtime = null;
         try
         {
-            var info = new FileInfo(path);
             if (info.Exists)
             {
                 size = info.Length;
@@ -795,6 +897,28 @@ public sealed class SortEngine
             return Select(ReadJournal(), limit, since, before, folder, rule, batch)
                 .Select(ToRecord).ToList();
         }
+    }
+
+    /// <summary>
+    /// How many live journal entries each rule name has sorted. One pass over
+    /// the journal; powers the "N sorted" badge on the rules page.
+    /// </summary>
+    public Dictionary<string, int> RuleCounts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        lock (_journalLock)
+        {
+            foreach (var entry in ReadJournal())
+            {
+                var rule = entry.Rule;
+                if (string.IsNullOrEmpty(rule))
+                {
+                    continue;
+                }
+                counts[rule] = counts.TryGetValue(rule, out var n) ? n + 1 : 1;
+            }
+        }
+        return counts;
     }
 
     private static MoveRecord ToRecord(JournalEntry entry) => new()
