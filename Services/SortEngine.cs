@@ -910,11 +910,11 @@ public sealed class SortEngine
     /// </summary>
     public List<MoveRecord> Records(int? limit = null, string? since = null,
         string? before = null, string? folder = null, string? rule = null,
-        string? batch = null)
+        string? batch = null, string? name = null)
     {
         lock (_journalLock)
         {
-            return Select(ReadJournal(), limit, since, before, folder, rule, batch)
+            return Select(ReadJournal(), limit, since, before, folder, rule, batch, name)
                 .Select(ToRecord).ToList();
         }
     }
@@ -956,7 +956,8 @@ public sealed class SortEngine
     };
 
     private static List<JournalEntry> Select(List<JournalEntry> loaded, int? limit,
-        string? since, string? before, string? folder, string? rule, string? batch)
+        string? since, string? before, string? folder, string? rule, string? batch,
+        string? name = null)
     {
         if (limit is <= 0)                             // explicit "none"
         {
@@ -991,6 +992,10 @@ public sealed class SortEngine
             var wanted = batch.ToLowerInvariant();
             rows = rows.Where(x => (x.Batch ?? "").ToLowerInvariant() == wanted).ToList();
         }
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            rows = rows.Where(x => NameMatches(name, Path.GetFileName(x.Src) ?? "")).ToList();
+        }
         if (limit is int n && n > 0 && rows.Count > n)
         {
             rows = rows.Skip(rows.Count - n).ToList();
@@ -998,9 +1003,22 @@ public sealed class SortEngine
         return rows;
     }
 
+    /// <summary>
+    /// Restore previously sorted files, dropping restored entries from the
+    /// journal so a later undo never replays them.
+    ///
+    /// Selectors match <see cref="Records"/> (<paramref name="limit"/>,
+    /// <paramref name="since"/>/<paramref name="before"/>,
+    /// <paramref name="folder"/>, <paramref name="rule"/>,
+    /// <paramref name="batch"/>, <paramref name="name"/>). A
+    /// <paramref name="target"/> restores everything into that folder instead of
+    /// each file's original location. Collision-safe: an occupied target becomes
+    /// "name (1).ext" unless the file already there matches the journal (size +
+    /// mtime) — then it is treated as already restored and dropped.
+    /// </summary>
     public int Undo(bool dryRun = false, int? limit = null, string? since = null,
         string? before = null, string? folder = null, string? rule = null,
-        string? batch = null)
+        string? batch = null, string? name = null, string? target = null)
     {
         lock (_journalLock)
         {
@@ -1009,76 +1027,47 @@ public sealed class SortEngine
             {
                 return 0;
             }
-            var toUndo = Select(loaded, limit, since, before, folder, rule, batch);
+            var toUndo = Select(loaded, limit, since, before, folder, rule, batch, name);
             if (toUndo.Count == 0)
             {
                 return 0;
             }
             var selected = new HashSet<JournalEntry>(toUndo, ReferenceEqualityComparer.Instance);
             var rest = loaded.Where(x => !selected.Contains(x)).ToList();
+            var actions = BuildActions(toUndo, target);
             var restored = 0;
 
-            // Reverse order: the most recent move is put back first.
-            for (var i = toUndo.Count - 1; i >= 0; i--)
+            // BuildActions walks most-recent-first, so the newest move is put
+            // back first.
+            foreach (var action in actions)
             {
-                var entry = toUndo[i];
-                if (!File.Exists(entry.Dest))
+                var entry = action.Entry;
+                if (action.Status == "missing")
                 {
                     rest.Add(entry);                    // no longer there → keep it
                     continue;
                 }
-                if (entry.Size is long expected)
+                if (action.Status == "already")
+                {
+                    continue;                           // already back → drop it
+                }
+                if (action.Changed)
+                {
+                    Console.Error.WriteLine(
+                        $"* {entry.Dest} changed size since sorting; restoring anyway");
+                }
+                if (!dryRun)
                 {
                     try
                     {
-                        if (new FileInfo(entry.Dest).Length != expected)
-                        {
-                            Console.Error.WriteLine(
-                                $"* {entry.Dest} changed size since sorting; restoring anyway");
-                        }
+                        EnsureParent(action.Target);
+                        File.Move(entry.Dest, action.Target);
                     }
                     catch (Exception)
                     {
-                        // stat race → proceed with the restore
+                        rest.Add(entry);
+                        continue;
                     }
-                }
-                if (File.Exists(entry.Src))
-                {
-                    if (IsSameFile(entry, entry.Src))
-                    {
-                        continue;                       // already back → drop it
-                    }
-                    var target = UniquePath(entry.Src); // collision-safe restore
-                    if (!dryRun)
-                    {
-                        try
-                        {
-                            EnsureParent(target);
-                            File.Move(entry.Dest, target);
-                        }
-                        catch (Exception)
-                        {
-                            rest.Add(entry);
-                            continue;
-                        }
-                    }
-                    restored++;
-                    continue;
-                }
-                if (dryRun)
-                {
-                    restored++;
-                    continue;
-                }
-                try
-                {
-                    EnsureParent(entry.Src);
-                    File.Move(entry.Dest, entry.Src);
-                }
-                catch (Exception)
-                {
-                    rest.Add(entry);
-                    continue;
                 }
                 restored++;
             }
@@ -1089,6 +1078,230 @@ public sealed class SortEngine
             }
             return restored;
         }
+    }
+
+    /// <summary>
+    /// Describe, without touching the disk, what <see cref="Undo"/> would do for
+    /// the entries matching the selectors. Powers the Activity restore preview.
+    /// </summary>
+    public List<RestorePlanItem> RestorePlan(int? limit = null, string? since = null,
+        string? before = null, string? folder = null, string? rule = null,
+        string? batch = null, string? name = null, string? target = null)
+    {
+        lock (_journalLock)
+        {
+            var toUndo = Select(ReadJournal(), limit, since, before, folder, rule, batch, name);
+            return BuildActions(toUndo, target).Select(action => new RestorePlanItem
+            {
+                Record = ToRecord(action.Entry),
+                Source = action.Entry.Src,
+                Destination = action.Entry.Dest,
+                Intended = action.Intended,
+                Target = action.Target,
+                Size = action.Entry.Size,
+                Status = action.Status,
+                Changed = action.Changed,
+                Note = action.Note,
+            }).ToList();
+        }
+    }
+
+    /// <summary>One concrete restore step derived from a journal entry.</summary>
+    private sealed record RestoreAction(JournalEntry Entry, string Intended,
+        string Target, string Status, bool Changed, string Note);
+
+    /// <summary>
+    /// Turn selected entries into concrete restore actions (most recent first),
+    /// resolving name clashes both on disk and against earlier rows of the plan.
+    /// </summary>
+    private static List<RestoreAction> BuildActions(List<JournalEntry> toUndo, string? target)
+    {
+        var actions = new List<RestoreAction>();
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = toUndo.Count - 1; i >= 0; i--)
+        {
+            var entry = toUndo[i];
+            var intended = string.IsNullOrEmpty(target)
+                ? entry.Src
+                : Path.Combine(target, Path.GetFileName(entry.Src));
+            var changed = false;
+            if (entry.Size is long expected)
+            {
+                try
+                {
+                    changed = new FileInfo(entry.Dest).Length != expected;
+                }
+                catch (Exception)
+                {
+                    changed = false;                    // stat race → assume unchanged
+                }
+            }
+
+            if (!File.Exists(entry.Dest))
+            {
+                actions.Add(new RestoreAction(entry, intended, intended, "missing", changed,
+                    "no longer there"));
+                continue;
+            }
+            if (string.IsNullOrEmpty(target) && IsSameFile(entry, intended))
+            {
+                actions.Add(new RestoreAction(entry, intended, intended, "already", changed,
+                    "already back"));
+                continue;
+            }
+
+            var resolved = PlanTarget(intended, taken);
+            taken.Add(resolved);
+            var collision = !string.Equals(resolved, intended, StringComparison.OrdinalIgnoreCase);
+            actions.Add(new RestoreAction(entry, intended, resolved,
+                collision ? "collision" : "restore", changed,
+                collision ? $"restoring to {Path.GetFileName(resolved)}" : ""));
+        }
+        return actions;
+    }
+
+    private static string PlanTarget(string basePath, HashSet<string> taken)
+    {
+        if (!File.Exists(basePath) && !taken.Contains(basePath))
+        {
+            return basePath;
+        }
+        var dir = Path.GetDirectoryName(basePath) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(basePath);
+        var ext = Path.GetExtension(basePath);
+        var n = 1;
+        while (true)
+        {
+            var candidate = Path.Combine(dir, $"{stem} ({n}){ext}");
+            if (!File.Exists(candidate) && !taken.Contains(candidate))
+            {
+                return candidate;
+            }
+            n++;
+        }
+    }
+
+    /// <summary>Read the journal once and build the by-rule/folder/batch index.</summary>
+    public JournalIndex Index()
+    {
+        lock (_journalLock)
+        {
+            return new JournalIndex(ReadJournal().Select(ToRecord));
+        }
+    }
+
+    /// <summary>Copy the journal to <c>history.log.bak</c>; null when there is none.</summary>
+    public string? BackupJournal()
+    {
+        lock (_journalLock)
+        {
+            if (!File.Exists(_config.HistoryPath))
+            {
+                return null;
+            }
+            var backup = _config.HistoryPath + ".bak";
+            File.Copy(_config.HistoryPath, backup, overwrite: true);
+            return backup;
+        }
+    }
+
+    /// <summary>
+    /// Write journal entries (honouring the selectors) to
+    /// <paramref name="path"/> as newline-delimited JSON, re-importable by
+    /// <see cref="ImportJournal"/>. Returns how many entries were written.
+    /// </summary>
+    public int ExportJournal(string path, int? limit = null, string? since = null,
+        string? before = null, string? folder = null, string? rule = null,
+        string? batch = null, string? name = null)
+    {
+        lock (_journalLock)
+        {
+            var rows = Select(ReadJournal(), limit, since, before, folder, rule, batch, name);
+            var sb = new StringBuilder();
+            foreach (var entry in rows)
+            {
+                sb.Append(Serialize(entry)).Append('\n');
+            }
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            File.WriteAllText(path, sb.ToString());
+            return rows.Count;
+        }
+    }
+
+    /// <summary>
+    /// Merge entries from <paramref name="path"/> into the journal, skipping
+    /// ones whose id is already present. With <paramref name="merge"/> false the
+    /// journal is replaced instead. Returns how many entries were added.
+    /// </summary>
+    public int ImportJournal(string path, bool merge = true)
+    {
+        lock (_journalLock)
+        {
+            var incoming = new List<JournalEntry>();
+            if (File.Exists(path))
+            {
+                foreach (var raw in File.ReadAllLines(path))
+                {
+                    var entry = ParseEntry(raw);
+                    if (entry is not null)
+                    {
+                        incoming.Add(entry);
+                    }
+                }
+            }
+            if (!merge)
+            {
+                WriteJournal(incoming);
+                return incoming.Count;
+            }
+            var kept = ReadJournal();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in kept)
+            {
+                if (!string.IsNullOrEmpty(entry.Id))
+                {
+                    seen.Add(entry.Id);
+                }
+            }
+            var added = 0;
+            foreach (var entry in incoming)
+            {
+                if (!string.IsNullOrEmpty(entry.Id) && !seen.Add(entry.Id))
+                {
+                    continue;                            // duplicate id → skip
+                }
+                kept.Add(entry);
+                added++;
+            }
+            WriteJournal(kept);
+            return added;
+        }
+    }
+
+    /// <summary>
+    /// Case-insensitive file-name search: a plain substring, or a glob when the
+    /// pattern contains <c>*</c> or <c>?</c>.
+    /// </summary>
+    private static bool NameMatches(string pattern, string fileName)
+    {
+        var needle = pattern.Trim().ToLowerInvariant();
+        if (needle.Length == 0)
+        {
+            return true;
+        }
+        var hay = fileName.ToLowerInvariant();
+        if (needle.IndexOf('*') >= 0 || needle.IndexOf('?') >= 0)
+        {
+            var regex = "^" + Regex.Escape(needle)
+                .Replace("\\*", ".*", StringComparison.Ordinal)
+                .Replace("\\?", ".", StringComparison.Ordinal) + "$";
+            return Regex.IsMatch(hay, regex);
+        }
+        return hay.Contains(needle, StringComparison.Ordinal);
     }
 
     /// <summary>

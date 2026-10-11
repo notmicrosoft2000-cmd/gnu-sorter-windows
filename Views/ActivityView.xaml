@@ -6,6 +6,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -34,9 +35,29 @@
             </Button>
         </StackPanel>
 
-        <InfoBar x:Name="StatusBar" Grid.Row="1" IsOpen="False" IsClosable="True" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10">
+            <TextBox x:Name="SearchBox"
+                     PlaceholderText="Search file name"
+                     Width="200"
+                     TextChanged="Search_TextChanged" />
+            <ComboBox x:Name="RuleFilter"
+                      MinWidth="150"
+                      SelectionChanged="RuleFilter_SelectionChanged" />
+            <Button x:Name="RestoreButton" Click="Restore_Click"
+                    ToolTipService.ToolTip="Preview and restore the matching files">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <SymbolIcon Symbol="Undo" />
+                    <TextBlock Text="Restore…" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="BackupButton" Click="Backup_Click">Back up</Button>
+            <Button x:Name="ExportButton" Click="Export_Click">Export…</Button>
+            <Button x:Name="ImportButton" Click="Import_Click">Import…</Button>
+        </StackPanel>
 
-        <Grid Grid.Row="2">
+        <InfoBar x:Name="StatusBar" Grid.Row="2" IsOpen="False" IsClosable="True" />
+
+        <Grid Grid.Row="3">
             <ListView x:Name="ActivityList" SelectionMode="None">
                 <ListView.ItemTemplate>
                     <DataTemplate>
@@ -71,7 +92,7 @@
         </Grid>
 
         <TextBlock x:Name="Footnote"
-                   Grid.Row="3"
+                   Grid.Row="4"
                    FontSize="12"
                    Opacity="0.6"
                    TextWrapping="Wrap" />
