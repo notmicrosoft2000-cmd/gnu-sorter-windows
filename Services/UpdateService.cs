@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Net.Http;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GnuSorter.Models;
 
 namespace GnuSorter.Services;
 
@@ -12,21 +12,38 @@ namespace GnuSorter.Services;
 /// it and swaps it in. Because a running exe cannot replace itself, the swap
 /// is done by a tiny detached .cmd that kills the app, moves the new file over
 /// the old one and relaunches it.
+///
+/// Checks are <b>channel-aware</b>: only releases whose channel matches this
+/// build's channel (indev/alpha/beta/rc/release) are ever offered, and versions
+/// are compared within that channel.
 /// </summary>
 public sealed class UpdateService
 {
     private const string OwnerAndRepo = "notmicrosoft2000-cmd/gnu-sorter-windows";
-    private const string LatestApiUrl =
-        $"https://api.github.com/repos/{OwnerAndRepo}/releases/latest";
+    private const string ReleasesApiUrl =
+        $"https://api.github.com/repos/{OwnerAndRepo}/releases?per_page=30";
     private const string AssetName = "gnu-sorter-windows.exe";
     private const int MaxReplaceAttempts = 10;
 
     private static readonly HttpClient Http = CreateClient();
 
+    /// <summary>A build found for this channel (may or may not be newer).</summary>
+    public sealed record UpdateCheck(string Tag, string DownloadUrl)
+    {
+        /// <summary>"3.0.1" for a friendly display (drops a leading "v").</summary>
+        public string LatestDisplay => VersionInfo.Display(Tag);
+
+        /// <summary>True when <see cref="Tag"/> is newer than the running build.</summary>
+        public bool IsNewer => VersionInfo.IsNewer(Tag, AppInfo.Version);
+    }
+
     private sealed class ReleaseInfo
     {
         [JsonPropertyName("tag_name")]
         public string? TagName { get; set; }
+
+        [JsonPropertyName("draft")]
+        public bool Draft { get; set; }
 
         [JsonPropertyName("assets")]
         public List<AssetInfo> Assets { get; set; } = new();
@@ -45,57 +62,59 @@ public sealed class UpdateService
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         // GitHub's API rejects requests without a User-Agent.
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("gnu-sorter-windows/" +
-            CurrentVersion());
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "gnu-sorter-windows/" + AppInfo.Version);
         return client;
     }
 
-    /// <summary>The running build's version (major/minor/build from the assembly).</summary>
-    public static Version CurrentVersion()
-    {
-        var v = Assembly.GetExecutingAssembly().GetName().Version
-                ?? new Version(0, 0, 0);
-        return new Version(Math.Max(v.Major, 0), Math.Max(v.Minor, 0),
-            Math.Max(v.Build, 0));
-    }
-
-    private static Version ParseTag(string? tag)
-    {
-        if (string.IsNullOrWhiteSpace(tag))
-        {
-            return new Version(0, 0, 0);
-        }
-        var parts = tag.TrimStart('v', 'V').Split('.');
-        int Major = parts.Length > 0 && int.TryParse(parts[0], out var m) ? m : 0;
-        int Minor = parts.Length > 1 && int.TryParse(parts[1], out var n) ? n : 0;
-        int Build = parts.Length > 2 && int.TryParse(parts[2], out var b) ? b : 0;
-        return new Version(Major, Minor, Build);
-    }
-
     /// <summary>
-    /// The newest release's version plus the direct download URL of the
-    /// self-contained exe. Returns null when there is no release yet or the
-    /// network is unavailable.
+    /// The newest non-draft release in this build's channel that carries the
+    /// self-contained exe asset. Returns null when there is no such release or
+    /// the network is unavailable.
     /// </summary>
-    public async Task<(Version Latest, string? DownloadUrl)?> CheckAsync()
+    public async Task<UpdateCheck?> CheckAsync()
     {
         try
         {
-            using var resp = await Http.GetAsync(LatestApiUrl);
+            using var resp = await Http.GetAsync(ReleasesApiUrl);
             if (!resp.IsSuccessStatusCode)
             {
-                return null; // 404 → no release yet
+                return null; // 404 → no releases yet
             }
             var json = await resp.Content.ReadAsStringAsync();
-            var info = JsonSerializer.Deserialize<ReleaseInfo>(json);
-            if (info is null)
+            var releases = JsonSerializer.Deserialize<List<ReleaseInfo>>(json);
+            if (releases is null)
             {
                 return null;
             }
-            var url = info.Assets.FirstOrDefault(a => string.Equals(
+
+            var channel = AppInfo.Channel;
+            ReleaseInfo? best = null;
+            foreach (var rel in releases)
+            {
+                if (rel.Draft || string.IsNullOrWhiteSpace(rel.TagName))
+                {
+                    continue;
+                }
+                if (VersionInfo.ChannelOf(rel.TagName) != channel)
+                {
+                    continue;
+                }
+                if (best is null ||
+                    VersionInfo.Compare(rel.TagName, best.TagName) > 0)
+                {
+                    best = rel;
+                }
+            }
+            if (best is null)
+            {
+                return null;
+            }
+
+            var url = best.Assets.FirstOrDefault(a => string.Equals(
                 a.Name, AssetName, StringComparison.OrdinalIgnoreCase))
                 ?.BrowserDownloadUrl;
-            return (ParseTag(info.TagName), url);
+            return new UpdateCheck(best.TagName!, url ?? "");
         }
         catch (Exception)
         {

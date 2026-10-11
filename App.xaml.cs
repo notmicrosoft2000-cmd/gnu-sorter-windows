@@ -31,20 +31,24 @@ public partial class App : Application
     {
         try
         {
-            var result = await Services.Updates.CheckAsync();
-            if (result is null ||
-                result.Value.Latest <= UpdateService.CurrentVersion() ||
-                string.IsNullOrEmpty(result.Value.DownloadUrl))
+            if (!Services.Config.LoadSettings().CheckForUpdates)
+            {
+                return; // opted out in Settings
+            }
+
+            var check = await Services.Updates.CheckAsync();
+            if (check is null ||
+                !check.IsNewer ||
+                string.IsNullOrEmpty(check.DownloadUrl))
             {
                 return;
             }
 
-            var (latest, url) = result.Value;
             var dialog = new ContentDialog
             {
                 Title = "Update available",
-                Content = $"Funnel {latest} is available (you have "
-                          + $"{UpdateService.CurrentVersion()}). Install it now? "
+                Content = $"Funnel {check.LatestDisplay} is available (you have "
+                          + $"{AppInfo.Version}). Install it now? "
                           + "The app will restart automatically.",
                 PrimaryButtonText = "Update",
                 CloseButtonText = "Later",
@@ -57,7 +61,8 @@ public partial class App : Application
                 return;
             }
 
-            var (ok, path, error) = await Services.Updates.DownloadAsync(url);
+            var (ok, path, error) = await Services.Updates.DownloadAsync(
+                check.DownloadUrl);
             if (!ok || string.IsNullOrEmpty(path))
             {
                 return; // updates never crash the app; the Settings page can retry

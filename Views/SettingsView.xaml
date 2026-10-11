@@ -52,6 +52,10 @@
 
             <TextBlock Text="Updates" Style="{StaticResource SubtitleTextBlockStyle}" />
             <StackPanel Spacing="10">
+                <ToggleSwitch Header="Check for updates automatically"
+                              OnContent="Look for a newer build in this channel after launch"
+                              OffContent="Only check when I click below"
+                              IsOn="{x:Bind ViewModel.CheckForUpdates, Mode=TwoWay}" />
                 <Button x:Name="UpdateButton" Content="Check for updates" Click="Update_Click" />
                 <TextBlock x:Name="UpdateStatus" TextWrapping="Wrap" Opacity="0.8"
                            FontFamily="Segoe UI" />

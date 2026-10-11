@@ -74,28 +74,29 @@ public sealed partial class SettingsView : Page
         UpdateStatus.Text = "Checking…";
         try
         {
-            var current = UpdateService.CurrentVersion();
-            var result = await App.Services.Updates.CheckAsync();
-            if (result is null || string.IsNullOrEmpty(result.Value.DownloadUrl))
+            var current = AppInfo.Version;
+            var check = await App.Services.Updates.CheckAsync();
+            if (check is null || string.IsNullOrEmpty(check.DownloadUrl))
             {
                 UpdateStatus.Text = "Could not check for updates right now "
-                                    + "(offline, or no release available yet).";
+                                    + $"(offline, or no {AppInfo.Channel} "
+                                    + "release available yet).";
                 return;
             }
 
-            var (latest, url) = result.Value;
-            if (latest <= current)
+            if (!check.IsNewer)
             {
-                UpdateStatus.Text = $"You are up to date (version {current}).";
+                UpdateStatus.Text = $"You are up to date (version {current}, "
+                                    + $"{AppInfo.Channel} channel).";
                 return;
             }
 
             var dialog = new ContentDialog
             {
                 Title = "Update available",
-                Content = $"Funnel {latest} is available (you have {current}). "
-                          + "Download and install it now? The app will restart "
-                          + "automatically once the new file is in place.",
+                Content = $"Funnel {check.LatestDisplay} is available (you have "
+                          + $"{current}). Download and install it now? The app "
+                          + "will restart automatically once the new file is in place.",
                 PrimaryButtonText = "Update",
                 CloseButtonText = "Later",
                 XamlRoot = this.XamlRoot,
@@ -108,7 +109,8 @@ public sealed partial class SettingsView : Page
             }
 
             UpdateStatus.Text = "Downloading…";
-            var (ok, path, error) = await App.Services.Updates.DownloadAsync(url);
+            var (ok, path, error) = await App.Services.Updates.DownloadAsync(
+                check.DownloadUrl);
             if (!ok || string.IsNullOrEmpty(path))
             {
                 UpdateStatus.Text = $"Download failed: {error?.Message}";

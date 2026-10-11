@@ -15,6 +15,9 @@ public sealed class AppSettings
 
     public bool CautiousDownloads { get; set; } = true;
 
+    /// <summary>Look for a newer build in this channel shortly after launch.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
     public AppSettings Clone() => new()
     {
         MinStableSeconds = MinStableSeconds,
@@ -23,5 +26,6 @@ public sealed class AppSettings
         Notifications = Notifications,
         DryRunDefault = DryRunDefault,
         CautiousDownloads = CautiousDownloads,
+        CheckForUpdates = CheckForUpdates,
     };
 }
