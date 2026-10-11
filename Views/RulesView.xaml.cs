@@ -347,6 +347,14 @@ public sealed partial class RulesView : Page
             OffContent = "Paused",
             IsOn = existing?.Enabled is not false,
         };
+        var matchAllSwitch = new ToggleSwitch
+        {
+            Header = "Require every condition",
+            OnContent = "All (AND)",
+            OffContent = "Any (OR)",
+            IsOn = string.Equals(existing?.MatchMode, "all",
+                StringComparison.OrdinalIgnoreCase),
+        };
         var error = new TextBlock
         {
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.OrangeRed),
@@ -363,6 +371,7 @@ public sealed partial class RulesView : Page
         panel.Children.Add(maxBox);
         panel.Children.Add(daysBox);
         panel.Children.Add(enabledSwitch);
+        panel.Children.Add(matchAllSwitch);
         panel.Children.Add(error);
 
         var dialog = new ContentDialog
@@ -440,7 +449,7 @@ public sealed partial class RulesView : Page
             MatchAll = existing?.MatchAll ?? false,
             Icon = existing?.Icon,
             Color = existing?.Color,
-            MatchMode = existing?.MatchMode,
+            MatchMode = matchAllSwitch.IsOn ? "all" : null,
         };
     }
 

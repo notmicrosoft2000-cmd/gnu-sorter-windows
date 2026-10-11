@@ -179,6 +179,9 @@ public sealed class SortEngine
         /// <summary>Catch-all: matches every file.</summary>
         public bool MatchAll { get; init; }
 
+        /// <summary>When true every specified matcher must hit (AND mode).</summary>
+        public bool MatchModeAll { get; init; }
+
         public Regex? ExcludeRegex { get; init; }
 
         public double? MinMb { get; init; }
@@ -209,6 +212,8 @@ public sealed class SortEngine
                 Extensions = extensions,
                 Enabled = rule.Enabled is not false,
                 MatchAll = rule.MatchAll,
+                MatchModeAll = string.Equals(rule.MatchMode, "all",
+                    StringComparison.OrdinalIgnoreCase),
                 ExcludeRegex = TryCompile(rule.ExcludeNameRegex),
                 MinMb = PositiveOrNull(rule.MinSizeMb),
                 MaxMb = PositiveOrNull(rule.MaxSizeMb),
@@ -279,21 +284,36 @@ public sealed class SortEngine
                 continue;
             }
 
-            var matched = rule.MatchAll;
-            if (!matched && rule.NameRegex is not null && rule.NameRegex.IsMatch(name))
+            var extHit = false;
+            foreach (var ext in rule.Extensions)
             {
-                matched = true;
-            }
-            if (!matched)
-            {
-                foreach (var ext in rule.Extensions)
+                if (name.EndsWith(ext, StringComparison.Ordinal))
                 {
-                    if (name.EndsWith(ext, StringComparison.Ordinal))
-                    {
-                        matched = true;
-                        break;
-                    }
+                    extHit = true;
+                    break;
                 }
+            }
+            var reHit = rule.NameRegex is not null && rule.NameRegex.IsMatch(name);
+            var hasExt = rule.Extensions.Length > 0;
+            var hasRe = rule.NameRegex is not null;
+            bool matched;
+            if (rule.MatchModeAll)
+            {
+                // "All": every specified matcher must hit (the catch-all flag
+                // counts as always true). A rule with no matchers never matches.
+                matched = hasExt || hasRe || rule.MatchAll;
+                if (hasExt && !extHit)
+                {
+                    matched = false;
+                }
+                if (hasRe && !reHit)
+                {
+                    matched = false;
+                }
+            }
+            else
+            {
+                matched = rule.MatchAll || extHit || reHit;
             }
             if (!matched)
             {
