@@ -93,7 +93,7 @@ public sealed partial class SettingsView : Page
             var dialog = new ContentDialog
             {
                 Title = "Update available",
-                Content = $"GNU Sorter {latest} is available (you have {current}). "
+                Content = $"Funnel {latest} is available (you have {current}). "
                           + "Download and install it now? The app will restart "
                           + "automatically once the new file is in place.",
                 PrimaryButtonText = "Update",

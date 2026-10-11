@@ -2,11 +2,12 @@ using Microsoft.Win32;
 
 namespace GnuSorter.Services;
 
-/// <summary>Registers GNU Sorter to launch at sign-in via the per-user Run key.</summary>
+/// <summary>Registers Funnel to launch at sign-in via the per-user Run key.</summary>
 public static class StartupService
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "GNU Sorter";
+    private const string ValueName = "Funnel";
+    private const string LegacyValueName = "GNU Sorter";
 
     public static bool IsEnabled()
     {
@@ -30,6 +31,9 @@ public static class StartupService
         }
         using var key = Registry.CurrentUser.CreateSubKey(RunKey, writable: true);
         key?.SetValue(ValueName, $"\"{exe}\"");
+        // Drop the pre-rename "GNU Sorter" Run-key value so old installs don't
+        // end up with two launch-on-sign-in entries.
+        key?.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
 
     public static void Disable()

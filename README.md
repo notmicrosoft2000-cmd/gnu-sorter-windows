@@ -1,6 +1,6 @@
-# GNU Sorter for Windows
+# Funnel for Windows
 
-A Windows-native rewrite of GNU Sorter built with **WinUI 3** (Windows App SDK) and
+A Windows-native rewrite of Funnel built with **WinUI 3** (Windows App SDK) and
 .NET 8. It sorts any folder with custom, per-folder rules, and shares the same
 JSON configuration format as the Linux version.
 
@@ -83,7 +83,7 @@ Windows 10 1809+ and Windows 11.
 
 ## Updating
 
-GNU Sorter auto-updates from GitHub Releases:
+Funnel auto-updates from GitHub Releases:
 
 - On launch it quietly checks for a newer build and offers to install it (the
   app restarts itself once the new executable is in place).
@@ -100,7 +100,7 @@ GNU Sorter auto-updates from GitHub Releases:
 
 ## License
 
-**GPL-3.0** — same license as GNU Sorter. © 2026 **notmicrosoft2000-cmd**
+**GPL-3.0** — same license as the Linux version of Funnel. © 2026 **notmicrosoft2000-cmd**
 
 ## Links
 

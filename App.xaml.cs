@@ -43,7 +43,7 @@ public partial class App : Application
             var dialog = new ContentDialog
             {
                 Title = "Update available",
-                Content = $"GNU Sorter {latest} is available (you have "
+                Content = $"Funnel {latest} is available (you have "
                           + $"{UpdateService.CurrentVersion()}). Install it now? "
                           + "The app will restart automatically.",
                 PrimaryButtonText = "Update",

@@ -33,7 +33,7 @@
             <ToggleSwitch Header="Dry-run by default (Sort now previews only)"
                           IsOn="{x:Bind ViewModel.DryRunDefault, Mode=TwoWay}" />
 
-            <ToggleSwitch Header="Start GNU Sorter when I sign in"
+            <ToggleSwitch Header="Start Funnel when I sign in"
                           IsOn="{x:Bind ViewModel.StartOnLogin, Mode=TwoWay}" />
 
             <StackPanel Orientation="Horizontal" Spacing="12">
@@ -53,7 +53,7 @@
             </StackPanel>
 
             <TextBlock Text="About" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBlock Text="GNU Sorter for Windows" FontWeight="SemiBold" />
+            <TextBlock Text="Funnel for Windows" FontWeight="SemiBold" />
             <TextBlock Text="Version 2.5.0 · by notmicrosoft2000-cmd" Opacity="0.8" />
             <TextBlock TextWrapping="Wrap" Opacity="0.8"
                        Text="An advanced file-sorting utility. Define rules per folder and let them organize incoming files automatically." />

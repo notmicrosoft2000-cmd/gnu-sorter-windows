@@ -19,8 +19,8 @@
     <Nullable>enable</Nullable>
     <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
     <Version>2.5.0</Version>
-    <AssemblyTitle>GNU Sorter for Windows</AssemblyTitle>
-    <Product>GNU Sorter</Product>
+    <AssemblyTitle>Funnel for Windows</AssemblyTitle>
+    <Product>Funnel</Product>
     <Authors>notmicrosoft2000-cmd</Authors>
     <Description>Sort any folder automatically with custom per-folder rules.</Description>
   </PropertyGroup>
