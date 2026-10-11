@@ -175,6 +175,10 @@ public sealed partial class FoldersView : Page
             var stats = _services.Engine.Sweep(roots, dryRun);
             var message = $"{stats.Moved} file(s) sorted, {stats.NeedsReview} to Needs-review, "
                 + $"{stats.Skipped} skipped";
+            if (stats.Held > 0)
+            {
+                message += $", {stats.Held} waiting (downloads / too fresh)";
+            }
             if (stats.Failed > 0)
             {
                 message += $", {stats.Failed} failed";

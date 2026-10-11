@@ -15,7 +15,67 @@ namespace GnuSorter.Services;
 public sealed class SortEngine
 {
     private static readonly string[] InProgressSuffixes =
-        { ".part", ".crdownload", ".download", ".tmp", ".partial" };
+    {
+        ".part", ".crdownload", ".download", ".opdownload", ".partial",
+        ".tmp", ".filepart", ".ytdl", ".!qb", ".un~",
+    };
+
+    // Extra-cautious settling: files this large get a longer settle window.
+    private const double LargeFileMb = 100.0;    // MB beyond which size scales the window
+    private const double ExtraPer100Mb = 4.0;    // +4 s per additional 100 MB
+    private const double MaxExtraSettle = 60.0;  // ... capped at one extra minute
+    private const double MtimeTolerance = 0.25;  // s — a rewrite bumps mtime
+
+    /// <summary>
+    /// How long a file of <paramref name="sizeBytes"/> must keep its size and
+    /// mtime still before it is trusted. A 3 GB download settles for
+    /// <c>baseSeconds + 60</c>, a 200 MB one for <c>+4</c>; anything under
+    /// 100 MB just uses the base window unchanged.
+    /// </summary>
+    public static double SettleWindowSeconds(long sizeBytes, double baseSeconds)
+    {
+        if (baseSeconds <= 0)
+        {
+            return 0;
+        }
+        var mb = sizeBytes / (1024.0 * 1024.0);
+        if (mb <= LargeFileMb)
+        {
+            return baseSeconds;
+        }
+        var extra = (mb - LargeFileMb) / 100.0 * ExtraPer100Mb;
+        return baseSeconds + Math.Min(extra, MaxExtraSettle);
+    }
+
+    /// <summary>
+    /// Windows-only signal: true when another process currently holds the file
+    /// open for writing (a sharing violation on our attempt to open it for
+    /// write). Downloaders open .part/.crdownload files without granting write
+    /// sharing, so this catches in-progress downloads no suffix or size probe
+    /// would see. Any other failure (read-only file, permissions) is treated as
+    /// "not busy" so it never blocks sorting.
+    /// </summary>
+    public static bool IsFileBusy(string path)
+    {
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Write,
+                FileShare.ReadWrite);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true; // sharing violation → another process is writing it
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false; // read-only / ACL denied → not an in-progress write
+        }
+        catch (Exception)
+        {
+            return false; // lost the file race → let the stability probes decide
+        }
+    }
 
     // Characters Windows forbids in a file/folder name.
     private static readonly char[] WindowsInvalidChars =
@@ -159,10 +219,19 @@ public sealed class SortEngine
         }
     }
 
-    /// <summary>True only if the file is old enough and its size held still.</summary>
-    public static bool IsStable(string path, double minSeconds, double interval = 0.5)
+    /// <summary>
+    /// True only if the file is old enough and both its size AND mtime held
+    /// still across <paramref name="minProbes"/> probes spaced
+    /// <paramref name="interval"/> apart. A download resuming (size grows) or
+    /// a file being rewritten in place (mtime bumps) resets the check. Large
+    /// files get a proportionally longer settle window first
+    /// (<see cref="SettleWindowSeconds"/>).
+    /// </summary>
+    public static bool IsStable(string path, double minSeconds, double interval = 0.5,
+        int minProbes = 3)
     {
         long size1;
+        DateTime mtime1;
         try
         {
             var info = new FileInfo(path);
@@ -170,32 +239,47 @@ public sealed class SortEngine
             {
                 return false;
             }
-            if (minSeconds > 0 &&
-                (DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < minSeconds)
+            if (minSeconds > 0)
+            {
+                var window = SettleWindowSeconds(info.Length, minSeconds);
+                if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < window)
+                {
+                    return false;
+                }
+            }
+            size1 = info.Length;
+            mtime1 = info.LastWriteTimeUtc;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        for (var probe = 0; probe < Math.Max(minProbes - 1, 0); probe++)
+        {
+            if (interval > 0)
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(interval));
+            }
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists)
+                {
+                    return false;
+                }
+                if (info.Length != size1
+                    || Math.Abs((info.LastWriteTimeUtc - mtime1).TotalSeconds) > MtimeTolerance)
+                {
+                    return false;
+                }
+            }
+            catch (Exception)
             {
                 return false;
             }
-            size1 = info.Length;
         }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        if (interval > 0)
-        {
-            Thread.Sleep(TimeSpan.FromSeconds(interval));
-        }
-
-        try
-        {
-            var info = new FileInfo(path);
-            return info.Exists && info.Length == size1;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        return true;
     }
 
     public static string UniquePath(string destination)
@@ -318,6 +402,7 @@ public sealed class SortEngine
         var settings = _config.LoadSettings();
         var minStable = settings.MinStableSeconds;
         var interval = settings.StabilityInterval;
+        var cautious = settings.CautiousDownloads;
 
         foreach (var root in roots)
         {
@@ -338,29 +423,49 @@ public sealed class SortEngine
                 continue;
             }
 
-            // Pass 1: collect eligible files, remembering their sizes, so the
+            // Pass 1: collect eligible files, remembering their sizes and mtimes, so the
             // (slow) settle sleep only happens once per batch instead of once
-            // per file.
-            var candidates = new List<(string Path, long Size)>();
+            // per file. Anything clearly mid-download (progress suffix) or
+            // still inside its settle window is "held" — parked, reported,
+            // never sorted.
+            var held = new List<string>();
+            var candidates = new List<(string Path, long Size, DateTime Mtime)>();
             foreach (var entry in entries)
             {
                 var name = Path.GetFileName(entry);
-                if (name.StartsWith('.') || IsSymlink(entry) || LooksInProgress(name))
+                if (name.StartsWith('.'))
                 {
                     stats.Skipped++;
+                    continue;
+                }
+                if (IsSymlink(entry))
+                {
+                    stats.Skipped++;
+                    continue;
+                }
+                if (LooksInProgress(name))
+                {
+                    held.Add(name);
                     continue;
                 }
                 try
                 {
                     var info = new FileInfo(entry);
-                    if (!info.Exists ||
-                        (minStable > 0 &&
-                         (DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < minStable))
+                    if (!info.Exists)
                     {
                         stats.Skipped++;
                         continue;
                     }
-                    candidates.Add((entry, info.Length));
+                    if (minStable > 0)
+                    {
+                        var window = SettleWindowSeconds(info.Length, minStable);
+                        if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < window)
+                        {
+                            held.Add(name);
+                            continue;
+                        }
+                    }
+                    candidates.Add((entry, info.Length, info.LastWriteTimeUtc));
                 }
                 catch (Exception)
                 {
@@ -370,40 +475,61 @@ public sealed class SortEngine
 
             if (candidates.Count == 0)
             {
+                stats.Held += held.Count;
+                stats.HeldFiles.AddRange(held);
                 continue;
             }
 
-            if (!dryRun && interval > 0)
+            // Confirmation probes: wait once, twice in extra-cautious mode,
+            // and only keep moving files whose size — and, when cautious,
+            // mtime too — held still between probes. In cautious mode a still
+            // open write handle (a downloader mid-write) also puts the file
+            // back on the holding list — a signal Linux cannot see.
+            var qualifying = candidates;
+            var probes = cautious && !dryRun ? 2 : (!dryRun ? 1 : 0);
+            for (var probe = 0; probe < probes; probe++)
             {
-                Thread.Sleep(TimeSpan.FromSeconds(interval));
-            }
-
-            // Pass 2: re-check each candidate's size, then move it. One
-            // un-sortable file (locked, permissions, …) must not abort the
-            // rest of the sweep.
-            foreach (var (entry, size1) in candidates)
-            {
-                if (!File.Exists(entry))
+                if (interval > 0)
                 {
-                    stats.Skipped++;
-                    continue;
+                    Thread.Sleep(TimeSpan.FromSeconds(interval));
                 }
-                if (!dryRun)
+                var kept = new List<(string Path, long Size, DateTime Mtime)>();
+                foreach (var (entry, size1, mtime1) in qualifying)
                 {
-                    try
-                    {
-                        if (new FileInfo(entry).Length != size1)
-                        {
-                            stats.Skipped++;
-                            continue;
-                        }
-                    }
-                    catch (Exception)
+                    if (!File.Exists(entry))
                     {
                         stats.Skipped++;
                         continue;
                     }
+                    try
+                    {
+                        var info = new FileInfo(entry);
+                        if (info.Length != size1
+                            || Math.Abs((info.LastWriteTimeUtc - mtime1).TotalSeconds) > MtimeTolerance)
+                        {
+                            held.Add(Path.GetFileName(entry));
+                            continue;
+                        }
+                        if (cautious && IsFileBusy(entry))
+                        {
+                            held.Add(Path.GetFileName(entry));
+                            continue;
+                        }
+                        kept.Add((entry, size1, mtime1));
+                    }
+                    catch (Exception)
+                    {
+                        stats.Skipped++;
+                    }
                 }
+                qualifying = kept;
+            }
+
+            stats.Held += held.Count;
+            stats.HeldFiles.AddRange(held);
+
+            foreach (var (entry, _, _) in qualifying)
+            {
                 try
                 {
                     var category = SortFile(entry, root, dryRun);

@@ -13,6 +13,8 @@ public sealed class AppSettings
 
     public bool DryRunDefault { get; set; } = false;
 
+    public bool CautiousDownloads { get; set; } = true;
+
     public AppSettings Clone() => new()
     {
         MinStableSeconds = MinStableSeconds,
@@ -20,5 +22,6 @@ public sealed class AppSettings
         WatchInterval = WatchInterval,
         Notifications = Notifications,
         DryRunDefault = DryRunDefault,
+        CautiousDownloads = CautiousDownloads,
     };
 }

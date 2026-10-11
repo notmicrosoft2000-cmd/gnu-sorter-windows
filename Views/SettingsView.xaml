@@ -33,6 +33,11 @@
             <ToggleSwitch Header="Dry-run by default (Sort now previews only)"
                           IsOn="{x:Bind ViewModel.DryRunDefault, Mode=TwoWay}" />
 
+            <ToggleSwitch Header="Extra-cautious download detection"
+                          OnContent="Wait for downloads to fully settle before sorting"
+                          OffContent="Sort as soon as a file looks stable"
+                          IsOn="{x:Bind ViewModel.CautiousDownloads, Mode=TwoWay}" />
+
             <ToggleSwitch Header="Start Funnel when I sign in"
                           IsOn="{x:Bind ViewModel.StartOnLogin, Mode=TwoWay}" />
 

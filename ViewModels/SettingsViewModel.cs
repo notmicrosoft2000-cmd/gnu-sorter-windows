@@ -25,6 +25,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _dryRunDefault;
 
     [ObservableProperty]
+    private bool _cautiousDownloads = true;
+
+    [ObservableProperty]
     private bool _startOnLogin;
 
     [ObservableProperty]
@@ -44,6 +47,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         WatchInterval = settings.WatchInterval;
         Notifications = settings.Notifications;
         DryRunDefault = settings.DryRunDefault;
+        CautiousDownloads = settings.CautiousDownloads;
         StartOnLogin = StartupService.IsEnabled();
         ConfigPath = _services.Config.ConfigDir;
     }
@@ -57,6 +61,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             WatchInterval = WatchInterval,
             Notifications = Notifications,
             DryRunDefault = DryRunDefault,
+            CautiousDownloads = CautiousDownloads,
         });
     }
 }

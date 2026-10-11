@@ -150,11 +150,13 @@ public sealed class WatchService : IDisposable
             return;
         }
 
-        // Wait out the stability window (up to a minute).
+        // Wait out the stability window (up to a minute), also standing down
+        // while another process still holds the file open for writing.
         var deadline = DateTime.UtcNow.AddSeconds(60);
         while (DateTime.UtcNow < deadline && !token.IsCancellationRequested)
         {
-            if (SortEngine.IsStable(path, minStable, interval: 1.0))
+            if (!SortEngine.IsFileBusy(path)
+                && SortEngine.IsStable(path, minStable, interval: 1.0))
             {
                 break;
             }
