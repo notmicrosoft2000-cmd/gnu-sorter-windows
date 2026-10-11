@@ -1362,7 +1362,7 @@ public sealed class RuleWizardDialog : ContentDialog
         }
         for (var i = 0; i < items.Count; i++)
         {
-            var element = items[i];
+            var element = (FrameworkElement)items[i];
             Grid.SetRow(element, i / columns);
             Grid.SetColumn(element, i % columns);
             host.Children.Add(element);
