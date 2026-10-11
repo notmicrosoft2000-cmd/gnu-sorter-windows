@@ -1,0 +1,28 @@
+<Project>
+
+  <!--
+    Single source of truth for Funnel for Windows branding and version.
+    Directory.Build.props is imported automatically by the .NET SDK, so the
+    .csproj stays free of duplicated version/product metadata.
+
+    Release channels follow the Linux app: X.Y.Z-dev.N (indev),
+    X.Y.Z-alpha.N, X.Y.Z-beta.N, X.Y.Z-rc.N, X.Y.Z (release). Bump this one
+    value when cutting a release; InformationalVersion is what the app and the
+    updater read at runtime.
+  -->
+  <PropertyGroup>
+    <Version>3.0.0-dev.0</Version>
+    <AssemblyVersion>3.0.0.0</AssemblyVersion>
+    <FileVersion>3.0.0.0</FileVersion>
+    <InformationalVersion>3.0.0-dev.0</InformationalVersion>
+
+    <Product>Funnel</Product>
+    <AssemblyTitle>Funnel for Windows</AssemblyTitle>
+    <Company>notmicrosoft2000-cmd</Company>
+    <Authors>notmicrosoft2000-cmd</Authors>
+    <Description>Sort any folder automatically with custom per-folder rules.</Description>
+
+    <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>

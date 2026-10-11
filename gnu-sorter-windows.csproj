@@ -17,12 +17,8 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
-    <Version>2.5.0</Version>
-    <AssemblyTitle>Funnel for Windows</AssemblyTitle>
-    <Product>Funnel</Product>
-    <Authors>notmicrosoft2000-cmd</Authors>
-    <Description>Sort any folder automatically with custom per-folder rules.</Description>
+    <!-- Product name, version, icon and description live in
+         Directory.Build.props (single source of truth). -->
   </PropertyGroup>
 
   <ItemGroup>

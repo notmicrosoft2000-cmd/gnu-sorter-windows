@@ -33,6 +33,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _configPath = "";
 
+    /// <summary>Version string for the About pane, from the single source.</summary>
+    public string VersionDisplay => AppInfo.VersionDisplay;
+
+    /// <summary>The release channel this build belongs to (indev/alpha/…/release).</summary>
+    public string Channel => AppInfo.Channel;
+
     public SettingsViewModel(AppServices services)
     {
         _services = services;
