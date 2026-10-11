@@ -189,15 +189,30 @@ public sealed partial class RulesView : Page
             return;
         }
 
-        var rule = await ShowRuleDialogAsync(null);
+        var wizard = new RuleWizardDialog(_services, _currentRoot, _currentRules)
+        {
+            XamlRoot = XamlRoot,
+        };
+        await wizard.ShowAsync();
+
+        var rule = wizard.CreatedRule;
         if (rule is null)
         {
             return;
         }
 
-        _currentRules.Add(rule);
+        // Replace a same-named rule, then place the new one at the chosen
+        // priority (first match wins).
+        _currentRules.RemoveAll(r =>
+            string.Equals(r.Name, rule.Name, StringComparison.OrdinalIgnoreCase));
+        var index = Math.Clamp(wizard.InsertIndex, 0, _currentRules.Count);
+        _currentRules.Insert(index, rule);
         Persist();
-        RefreshRules();
+        LoadSelection();
+
+        StatusBar.Severity = InfoBarSeverity.Success;
+        StatusBar.Message = $"Added rule: {rule.Name}/";
+        StatusBar.IsOpen = true;
     }
 
     private async void EditRule_Click(object sender, RoutedEventArgs e)
