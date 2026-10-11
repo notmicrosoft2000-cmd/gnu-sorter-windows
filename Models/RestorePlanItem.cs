@@ -23,7 +23,7 @@ public sealed class RestorePlanItem
 
     public long? Size { get; init; }
 
-    /// <summary>One of <c>restore</c>, <c>collision</c>, <c>already</c> or <c>missing</c>.</summary>
+    /// <summary>restore / collision / overwrite / skip / already / missing.</summary>
     public string Status { get; init; } = "restore";
 
     /// <summary>True when the destination's size drifted from the journal.</summary>
@@ -33,5 +33,5 @@ public sealed class RestorePlanItem
     public string Note { get; init; } = "";
 
     /// <summary>True when this row would actually move a file back.</summary>
-    public bool Actionable => Status is "restore" or "collision";
+    public bool Actionable => Status is "restore" or "collision" or "overwrite";
 }

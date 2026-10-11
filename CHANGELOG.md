@@ -23,10 +23,18 @@ with the same pre-release channels as the Linux app:
   applied via the window's requested theme.
 - **Per-rule accent colour**: rules can carry a hex colour, shown as a dot on
   the rule row and edited in the rule dialog (mirrors the Linux `#rrggbb`).
+- **Journal power tools**: the Activity page gains extension and size filters
+  (`1M`, `500M`) alongside the existing name/rule search, plus an **On
+  conflict** choice for restores — *Rename* (default, `name (1).ext`),
+  *Overwrite* or *Skip*. The restore preview reports the new
+  `overwrite`/`skip` outcomes.
+- **Journal retention**: History settings let you cap the journal by entry
+  count (default 2500) and by size in bytes (default 1,000,000); once it
+  passes the byte ceiling it is trimmed to the newest entries.
 
 ### Changed
 - Version scheme aligned with Linux (`X.Y.Z-dev.N` / `-alpha.N` / `-beta.N` /
   `-rc.N` / `X.Y.Z`). The current build is `3.0.0-dev.0` (indev).
 
-> Entries for the journal work land here as the Windows mirror of Linux
-> Phase 4 proceeds.
+> The Windows app now mirrors Linux Phase 4 in full; the next milestone is the
+> `3.0.0` release.

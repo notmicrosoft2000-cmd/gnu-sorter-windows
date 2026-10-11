@@ -23,6 +23,14 @@ public sealed class AppSettings
     /// </summary>
     public string ColorScheme { get; set; } = "default";
 
+    /// <summary>
+    /// Journal retention: once history.log passes <see cref="HistoryMaxBytes"/>,
+    /// trim it down to the most recent <see cref="HistoryMaxEntries"/> entries.
+    /// </summary>
+    public int HistoryMaxEntries { get; set; } = 2500;
+
+    public long HistoryMaxBytes { get; set; } = 1_000_000;
+
     public AppSettings Clone() => new()
     {
         MinStableSeconds = MinStableSeconds,
@@ -33,5 +41,7 @@ public sealed class AppSettings
         CautiousDownloads = CautiousDownloads,
         CheckForUpdates = CheckForUpdates,
         ColorScheme = ColorScheme,
+        HistoryMaxEntries = HistoryMaxEntries,
+        HistoryMaxBytes = HistoryMaxBytes,
     };
 }

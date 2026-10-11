@@ -34,6 +34,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _colorSchemeIndex;
 
+    /// <summary>Journal retention (bound to NumberBox, hence double).</summary>
+    [ObservableProperty]
+    private double _historyMaxEntries = 2500;
+
+    [ObservableProperty]
+    private double _historyMaxBytes = 1_000_000;
+
     [ObservableProperty]
     private bool _startOnLogin;
 
@@ -76,6 +83,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             "dark" => 2,
             _ => 0,
         };
+        HistoryMaxEntries = settings.HistoryMaxEntries;
+        HistoryMaxBytes = settings.HistoryMaxBytes;
         StartOnLogin = StartupService.IsEnabled();
         ConfigPath = _services.Config.ConfigDir;
     }
@@ -92,6 +101,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             CautiousDownloads = CautiousDownloads,
             CheckForUpdates = CheckForUpdates,
             ColorScheme = ColorScheme,
+            HistoryMaxEntries = (int)Math.Max(1, HistoryMaxEntries),
+            HistoryMaxBytes = (long)Math.Max(1000, HistoryMaxBytes),
         });
     }
 }

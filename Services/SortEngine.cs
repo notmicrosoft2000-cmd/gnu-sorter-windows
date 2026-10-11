@@ -764,7 +764,8 @@ public sealed class SortEngine
             File.AppendAllText(_config.HistoryPath, Serialize(entry) + "\n");
             try
             {
-                if (new FileInfo(_config.HistoryPath).Length > RotateBytes)
+                var (_, maxBytes) = RetentionLimits();
+                if (new FileInfo(_config.HistoryPath).Length > maxBytes)
                 {
                     RotateJournal();
                 }
@@ -851,11 +852,59 @@ public sealed class SortEngine
     /// <summary>Trim the journal to the most recent entries once it grows too large.</summary>
     private void RotateJournal()
     {
+        var (keep, _) = RetentionLimits();
         var loaded = ReadJournal();
-        var kept = loaded.Count > RotateKeep
-            ? loaded.Skip(loaded.Count - RotateKeep).ToList()
+        var kept = loaded.Count > keep
+            ? loaded.Skip(loaded.Count - keep).ToList()
             : loaded;
         WriteJournal(kept);
+    }
+
+    /// <summary>
+    /// Journal retention limits from Settings, falling back to the built-in
+    /// defaults when a value is missing or non-positive.
+    /// </summary>
+    private (int Keep, long Bytes) RetentionLimits()
+    {
+        var settings = _config.LoadSettings();
+        var keep = settings.HistoryMaxEntries > 0 ? settings.HistoryMaxEntries : RotateKeep;
+        var bytes = settings.HistoryMaxBytes > 0 ? settings.HistoryMaxBytes : RotateBytes;
+        return (keep, bytes);
+    }
+
+    /// <summary>
+    /// Parse a byte count: a bare number (bytes) or a suffix <c>K</c>/<c>M</c>/<c>G</c>
+    /// (decimal, matching the Python app). Returns null when it is not a size.
+    /// </summary>
+    public static long? ParseSize(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+        var value = text.Trim().ToLowerInvariant();
+        long factor = 1;
+        if (value.EndsWith('k'))
+        {
+            factor = 1_000;
+            value = value[..^1];
+        }
+        else if (value.EndsWith('m'))
+        {
+            factor = 1_000_000;
+            value = value[..^1];
+        }
+        else if (value.EndsWith('g'))
+        {
+            factor = 1_000_000_000;
+            value = value[..^1];
+        }
+        if (double.TryParse(value.Trim(), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var number) && number >= 0)
+        {
+            return (long)Math.Round(number * factor);
+        }
+        return null;
     }
 
     /// <summary>Drop malformed lines; returns how many lines were removed.</summary>
@@ -910,11 +959,13 @@ public sealed class SortEngine
     /// </summary>
     public List<MoveRecord> Records(int? limit = null, string? since = null,
         string? before = null, string? folder = null, string? rule = null,
-        string? batch = null, string? name = null)
+        string? batch = null, string? name = null, string? ext = null,
+        long? minSize = null, long? maxSize = null)
     {
         lock (_journalLock)
         {
-            return Select(ReadJournal(), limit, since, before, folder, rule, batch, name)
+            return Select(ReadJournal(), limit, since, before, folder, rule, batch,
+                    name, ext, minSize, maxSize)
                 .Select(ToRecord).ToList();
         }
     }
@@ -957,7 +1008,8 @@ public sealed class SortEngine
 
     private static List<JournalEntry> Select(List<JournalEntry> loaded, int? limit,
         string? since, string? before, string? folder, string? rule, string? batch,
-        string? name = null)
+        string? name = null, string? ext = null, long? minSize = null,
+        long? maxSize = null)
     {
         if (limit is <= 0)                             // explicit "none"
         {
@@ -996,6 +1048,23 @@ public sealed class SortEngine
         {
             rows = rows.Where(x => NameMatches(name, Path.GetFileName(x.Src) ?? "")).ToList();
         }
+        if (!string.IsNullOrWhiteSpace(ext))
+        {
+            var wanted = ext.Split(',')
+                .Select(e => e.Trim().TrimStart('.').ToLowerInvariant())
+                .Where(e => e.Length > 0)
+                .ToHashSet();
+            rows = rows.Where(x => wanted.Contains(
+                Path.GetExtension(x.Src).TrimStart('.').ToLowerInvariant())).ToList();
+        }
+        if (minSize is long low)
+        {
+            rows = rows.Where(x => (x.Size ?? 0) >= low).ToList();
+        }
+        if (maxSize is long high)
+        {
+            rows = rows.Where(x => (x.Size ?? 0) <= high).ToList();
+        }
         if (limit is int n && n > 0 && rows.Count > n)
         {
             rows = rows.Skip(rows.Count - n).ToList();
@@ -1018,7 +1087,9 @@ public sealed class SortEngine
     /// </summary>
     public int Undo(bool dryRun = false, int? limit = null, string? since = null,
         string? before = null, string? folder = null, string? rule = null,
-        string? batch = null, string? name = null, string? target = null)
+        string? batch = null, string? name = null, string? target = null,
+        string? ext = null, long? minSize = null, long? maxSize = null,
+        string onConflict = "rename")
     {
         lock (_journalLock)
         {
@@ -1027,14 +1098,15 @@ public sealed class SortEngine
             {
                 return 0;
             }
-            var toUndo = Select(loaded, limit, since, before, folder, rule, batch, name);
+            var toUndo = Select(loaded, limit, since, before, folder, rule, batch,
+                name, ext, minSize, maxSize);
             if (toUndo.Count == 0)
             {
                 return 0;
             }
             var selected = new HashSet<JournalEntry>(toUndo, ReferenceEqualityComparer.Instance);
             var rest = loaded.Where(x => !selected.Contains(x)).ToList();
-            var actions = BuildActions(toUndo, target);
+            var actions = BuildActions(toUndo, target, onConflict);
             var restored = 0;
 
             // BuildActions walks most-recent-first, so the newest move is put
@@ -1051,6 +1123,11 @@ public sealed class SortEngine
                 {
                     continue;                           // already back → drop it
                 }
+                if (action.Status == "skip")
+                {
+                    rest.Add(entry);                    // occupied → leave it, keep entry
+                    continue;
+                }
                 if (action.Changed)
                 {
                     Console.Error.WriteLine(
@@ -1061,7 +1138,8 @@ public sealed class SortEngine
                     try
                     {
                         EnsureParent(action.Target);
-                        File.Move(entry.Dest, action.Target);
+                        File.Move(entry.Dest, action.Target,
+                            overwrite: action.Status == "overwrite");
                     }
                     catch (Exception)
                     {
@@ -1086,12 +1164,15 @@ public sealed class SortEngine
     /// </summary>
     public List<RestorePlanItem> RestorePlan(int? limit = null, string? since = null,
         string? before = null, string? folder = null, string? rule = null,
-        string? batch = null, string? name = null, string? target = null)
+        string? batch = null, string? name = null, string? target = null,
+        string? ext = null, long? minSize = null, long? maxSize = null,
+        string onConflict = "rename")
     {
         lock (_journalLock)
         {
-            var toUndo = Select(ReadJournal(), limit, since, before, folder, rule, batch, name);
-            return BuildActions(toUndo, target).Select(action => new RestorePlanItem
+            var toUndo = Select(ReadJournal(), limit, since, before, folder, rule,
+                batch, name, ext, minSize, maxSize);
+            return BuildActions(toUndo, target, onConflict).Select(action => new RestorePlanItem
             {
                 Record = ToRecord(action.Entry),
                 Source = action.Entry.Src,
@@ -1114,7 +1195,8 @@ public sealed class SortEngine
     /// Turn selected entries into concrete restore actions (most recent first),
     /// resolving name clashes both on disk and against earlier rows of the plan.
     /// </summary>
-    private static List<RestoreAction> BuildActions(List<JournalEntry> toUndo, string? target)
+    private static List<RestoreAction> BuildActions(List<JournalEntry> toUndo,
+        string? target, string onConflict = "rename")
     {
         var actions = new List<RestoreAction>();
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1147,6 +1229,30 @@ public sealed class SortEngine
             {
                 actions.Add(new RestoreAction(entry, intended, intended, "already", changed,
                     "already back"));
+                continue;
+            }
+
+            if (onConflict == "overwrite")
+            {
+                taken.Add(intended);
+                var note = File.Exists(intended) ? "replacing the file already there" : "";
+                actions.Add(new RestoreAction(entry, intended, intended,
+                    File.Exists(intended) ? "overwrite" : "restore", changed, note));
+                continue;
+            }
+            if (onConflict == "skip")
+            {
+                if (File.Exists(intended) || taken.Contains(intended))
+                {
+                    actions.Add(new RestoreAction(entry, intended, intended, "skip",
+                        changed, "occupied — skipped"));
+                }
+                else
+                {
+                    taken.Add(intended);
+                    actions.Add(new RestoreAction(entry, intended, intended, "restore",
+                        changed, ""));
+                }
                 continue;
             }
 

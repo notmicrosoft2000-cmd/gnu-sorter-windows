@@ -30,10 +30,29 @@ public sealed partial class ActivityView : Page
             ? tag
             : null;
 
+    /// <summary>Source-extension filter (comma list), or null.</summary>
+    private string? ExtFilter =>
+        string.IsNullOrWhiteSpace(ExtFilterBox.Text) ? null : ExtFilterBox.Text.Trim();
+
+    /// <summary>Recorded-size window in bytes; either bound may be null.</summary>
+    private long? MinSize => SortEngine.ParseSize(MinSizeBox.Text);
+
+    private long? MaxSize => SortEngine.ParseSize(MaxSizeBox.Text);
+
+    /// <summary>Restore conflict strategy: rename (default), overwrite or skip.</summary>
+    private string Conflict =>
+        ConflictChoice.SelectedItem is ComboBoxItem { Tag: string tag } ? tag : "rename";
+
+    /// <summary>True when any filter is active (so a restore has a target set).</summary>
+    private bool HasFilter =>
+        Query is not null || SelectedRule is not null || ExtFilter is not null
+        || MinSize is not null || MaxSize is not null;
+
     private void Reload()
     {
         var all = _services.Engine.Records();
-        var records = _services.Engine.Records(name: Query, rule: SelectedRule);
+        var records = _services.Engine.Records(name: Query, rule: SelectedRule,
+            ext: ExtFilter, minSize: MinSize, maxSize: MaxSize);
 
         _items.Clear();
         // Newest first.
@@ -54,8 +73,7 @@ public sealed partial class ActivityView : Page
         EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UndoButton.IsEnabled = all.Count > 0;
         UndoSweepButton.IsEnabled = all.Count > 0;
-        RestoreButton.IsEnabled = (Query is not null || SelectedRule is not null)
-            && _items.Count > 0;
+        RestoreButton.IsEnabled = HasFilter && _items.Count > 0;
         BackupButton.IsEnabled = all.Count > 0;
 
         Footnote.Text = records.Count == all.Count
@@ -154,7 +172,9 @@ public sealed partial class ActivityView : Page
 
     private async void Restore_Click(object sender, RoutedEventArgs e)
     {
-        var plan = _services.Engine.RestorePlan(name: Query, rule: SelectedRule);
+        var conflict = Conflict;
+        var plan = _services.Engine.RestorePlan(name: Query, rule: SelectedRule,
+            ext: ExtFilter, minSize: MinSize, maxSize: MaxSize, onConflict: conflict);
         var actionable = plan.Count(p => p.Actionable);
         if (actionable == 0)
         {
@@ -169,8 +189,9 @@ public sealed partial class ActivityView : Page
             {
                 "missing" => "no longer there",
                 "already" => "already back",
+                "skip" => "occupied — left in place",
                 _ => $"from {item.Record.DestinationFolder}/"
-                     + (item.Status == "collision" ? $"  ·  {item.Note}" : "")
+                     + (item.Status is "collision" or "overwrite" ? $"  ·  {item.Note}" : "")
                      + (item.Changed ? "  ·  size changed" : ""),
             };
             list.Children.Add(new TextBlock
@@ -198,7 +219,9 @@ public sealed partial class ActivityView : Page
 
         try
         {
-            var count = _services.Engine.Undo(name: Query, rule: SelectedRule);
+            var count = _services.Engine.Undo(name: Query, rule: SelectedRule,
+                ext: ExtFilter, minSize: MinSize, maxSize: MaxSize,
+                onConflict: conflict);
             Report(InfoBarSeverity.Success, $"Restored {count} file(s).");
         }
         catch (Exception ex)

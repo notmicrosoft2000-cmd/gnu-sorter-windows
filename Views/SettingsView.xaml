@@ -52,6 +52,22 @@
             <ToggleSwitch Header="Start Funnel when I sign in"
                           IsOn="{x:Bind ViewModel.StartOnLogin, Mode=TwoWay}" />
 
+            <TextBlock Text="Journal" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock FontSize="12" Opacity="0.7" TextWrapping="Wrap"
+                       Text="Once history.log grows past the size limit it is trimmed to the most recent entries, so the undo history stays bounded." />
+            <NumberBox Header="Keep at most this many entries"
+                       Minimum="100"
+                       Maximum="1000000"
+                       SmallChange="100"
+                       SpinButtonPlacementMode="Compact"
+                       Value="{x:Bind ViewModel.HistoryMaxEntries, Mode=TwoWay}" />
+            <NumberBox Header="Trim once the journal passes (bytes)"
+                       Minimum="1000"
+                       Maximum="1000000000"
+                       SmallChange="1000"
+                       SpinButtonPlacementMode="Compact"
+                       Value="{x:Bind ViewModel.HistoryMaxBytes, Mode=TwoWay}" />
+
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button Content="Save settings"
                         Style="{StaticResource AccentButtonStyle}"
