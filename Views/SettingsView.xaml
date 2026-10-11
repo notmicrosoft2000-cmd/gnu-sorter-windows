@@ -14,6 +14,13 @@
                        SpinButtonPlacementMode="Compact"
                        Value="{x:Bind ViewModel.MinStableSeconds, Mode=TwoWay}" />
 
+            <NumberBox Header="Stability check interval (seconds)"
+                       Minimum="0.1"
+                       Maximum="10"
+                       SmallChange="0.1"
+                       SpinButtonPlacementMode="Compact"
+                       Value="{x:Bind ViewModel.StabilityInterval, Mode=TwoWay}" />
+
             <NumberBox Header="Watcher poll interval (seconds)"
                        Minimum="0.5"
                        Maximum="30"
@@ -38,9 +45,16 @@
 
             <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" />
 
+            <TextBlock Text="Updates" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="10">
+                <Button x:Name="UpdateButton" Content="Check for updates" Click="Update_Click" />
+                <TextBlock x:Name="UpdateStatus" TextWrapping="Wrap" Opacity="0.8"
+                           FontFamily="Segoe UI" />
+            </StackPanel>
+
             <TextBlock Text="About" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBlock Text="GNU Sorter for Windows" FontWeight="SemiBold" />
-            <TextBlock Text="Version 2.0.0 · by notmicrosoft2000-cmd" Opacity="0.8" />
+            <TextBlock Text="Version 2.5.0 · by notmicrosoft2000-cmd" Opacity="0.8" />
             <TextBlock TextWrapping="Wrap" Opacity="0.8"
                        Text="An advanced file-sorting utility. Define rules per folder and let them organize incoming files automatically." />
 

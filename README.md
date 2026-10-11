@@ -81,6 +81,14 @@ Download `gnu-sorter-windows.exe` from Releases and run it. It is a self-contain
 single-file executable, so no installer or separate runtime is required. Runs on
 Windows 10 1809+ and Windows 11.
 
+## Updating
+
+GNU Sorter auto-updates from GitHub Releases:
+
+- On launch it quietly checks for a newer build and offers to install it (the
+  app restarts itself once the new executable is in place).
+- You can also check manually: **Settings → Updates → Check for updates**.
+
 ## How it works
 
 1. **Add a folder** on the *Folders* page and leave it enabled.

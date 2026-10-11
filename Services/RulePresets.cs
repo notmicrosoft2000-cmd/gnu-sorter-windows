@@ -7,9 +7,18 @@ namespace GnuSorter.Services;
 /// </summary>
 public static class RulePresets
 {
+    // "screenshot"-style names, but only when they are actually image files.
+    // A rule's extensions and regex are OR-ed, so binding the extension into
+    // the regex keeps `screen_capture.mp4` out of the Screenshots folder.
+    private const string ScreenshotRegex =
+        @"(screenshot|ibis|scree.?shot|capture).*\.(jpg|jpeg|png|gif|webp|heic|bmp|tiff|avif|dng|svg)$";
+
     public static List<SortRule> GnomeDefaults() => new()
     {
-        SortRule.NameRule("Photos/Screenshots", "screenshot|ibis|scree.?shot|capture"),
+        // Name-based rules come first: the first matching rule wins, so the
+        // Wallpapers rule must precede the broad Photos extension rule.
+        SortRule.NameRule("Photos/Screenshots", ScreenshotRegex),
+        SortRule.NameRule("Wallpapers", "wallpaper|white.?sur"),
         SortRule.ExtensionsRule("Photos", "jpg", "jpeg", "png", "gif", "webp", "heic",
             "bmp", "tiff", "avif", "svg", "ico", "raw", "psd", "xcf"),
         SortRule.ExtensionsRule("Videos", "mp4", "mkv", "webm", "mov", "avi", "flv",
@@ -28,15 +37,14 @@ public static class RulePresets
             "yml", "toml", "xml", "sql", "lua", "rb", "kt", "swift", "php", "vue", "svelte"),
         SortRule.ExtensionsRule("Fonts", "ttf", "otf", "woff", "woff2", "eot"),
         SortRule.ExtensionsRule("Torrents", "torrent"),
-        SortRule.NameRule("Wallpapers", "wallpaper|white.?sur"),
     };
 
     public static List<SortRule> Photography() => new()
     {
-        SortRule.NameRule("Photos/Screenshots", "screenshot|ibis|scree.?shot|capture"),
+        SortRule.NameRule("Photos/Screenshots", ScreenshotRegex),
+        SortRule.NameRule("Wallpapers", "wallpaper|white.?sur"),
         SortRule.ExtensionsRule("Photos", "jpg", "jpeg", "png", "gif", "webp", "heic",
             "bmp", "tiff", "avif", "raw", "psd", "xcf", "dng"),
-        SortRule.NameRule("Wallpapers", "wallpaper|white.?sur"),
         SortRule.ExtensionsRule("Videos", "mp4", "mkv", "webm", "mov", "avi", "m4v", "3gp"),
     };
 

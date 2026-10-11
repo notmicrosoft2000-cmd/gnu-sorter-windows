@@ -174,7 +174,12 @@ public sealed partial class FoldersView : Page
             var dryRun = _services.Config.LoadSettings().DryRunDefault;
             var stats = _services.Engine.Sweep(roots, dryRun);
             var message = $"{stats.Moved} file(s) sorted, {stats.NeedsReview} to Needs-review, "
-                + $"{stats.Skipped} skipped" + (dryRun ? " (dry run)." : ".");
+                + $"{stats.Skipped} skipped";
+            if (stats.Failed > 0)
+            {
+                message += $", {stats.Failed} failed";
+            }
+            message += dryRun ? " (dry run)." : ".";
             ShowStatus(InfoBarSeverity.Success, message);
         }
         catch (Exception ex)

@@ -13,6 +13,7 @@ public sealed class AppServices
         Config.EnsureDefaults();
         Engine = new SortEngine(Config);
         Watcher = new WatchService(Engine);
+        Updates = new UpdateService();
     }
 
     public ConfigStore Config { get; }
@@ -20,6 +21,8 @@ public sealed class AppServices
     public SortEngine Engine { get; }
 
     public WatchService Watcher { get; }
+
+    public UpdateService Updates { get; }
 
     public List<string> EnabledRoots() =>
         Config.LoadRoots().Where(r => r.Enabled).Select(r => r.Path).ToList();

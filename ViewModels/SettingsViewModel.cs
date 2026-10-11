@@ -13,6 +13,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private double _minStableSeconds = 3;
 
     [ObservableProperty]
+    private double _stabilityInterval = 0.5;
+
+    [ObservableProperty]
     private double _watchInterval = 2;
 
     [ObservableProperty]
@@ -37,6 +40,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         var settings = _services.Config.LoadSettings();
         MinStableSeconds = settings.MinStableSeconds;
+        StabilityInterval = settings.StabilityInterval;
         WatchInterval = settings.WatchInterval;
         Notifications = settings.Notifications;
         DryRunDefault = settings.DryRunDefault;
@@ -49,6 +53,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _services.Config.SaveSettings(new AppSettings
         {
             MinStableSeconds = MinStableSeconds,
+            StabilityInterval = StabilityInterval,
             WatchInterval = WatchInterval,
             Notifications = Notifications,
             DryRunDefault = DryRunDefault,

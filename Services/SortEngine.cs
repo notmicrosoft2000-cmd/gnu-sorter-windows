@@ -1,4 +1,7 @@
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GnuSorter.Models;
 
@@ -13,6 +16,36 @@ public sealed class SortEngine
 {
     private static readonly string[] InProgressSuffixes =
         { ".part", ".crdownload", ".download", ".tmp", ".partial" };
+
+    // Characters Windows forbids in a file/folder name.
+    private static readonly char[] WindowsInvalidChars =
+        { '<', '>', ':', '"', '|', '?', '*' };
+
+    // Windows device names that cannot be used as (or as the stem of) a folder.
+    private static readonly HashSet<string> WindowsReservedNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "con", "prn", "aux", "nul",
+            "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+            "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+        };
+
+    private static readonly JsonSerializerOptions JournalJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private sealed class JournalEntry
+    {
+        [JsonPropertyName("ts")]
+        public string Ts { get; set; } = "";
+
+        [JsonPropertyName("src")]
+        public string Src { get; set; } = "";
+
+        [JsonPropertyName("dest")]
+        public string Dest { get; set; } = "";
+    }
 
     private readonly ConfigStore _config;
     private readonly object _journalLock = new();
@@ -186,21 +219,95 @@ public sealed class SortEngine
 
     // -- moving ----------------------------------------------------------
 
+    /// <summary>
+    /// Sanitise a category into a relative destination name, or return null.
+    /// Mirrors the Python <c>safe_category_name</c>: rejects rooted paths,
+    /// drive/UNC prefixes, NUL bytes, empty/“.”/“..” components, Windows
+    /// invalid characters, trailing dots/spaces (which Windows silently
+    /// strips) and the reserved device names (CON, NUL, COM1, …).
+    /// </summary>
+    public static string? SafeCategoryName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+        name = name.Trim();
+        if (name.Length == 0 || name.Contains('\0'))
+        {
+            return null;
+        }
+        try
+        {
+            if (Path.IsPathRooted(name) || Path.GetPathRoot(name) is { Length: > 0 })
+            {
+                return null;
+            }
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        foreach (var component in name.Replace('\\', '/').Split('/'))
+        {
+            if (component.Length == 0 || component == "." || component == "..")
+            {
+                return null;
+            }
+            if (component != component.TrimEnd(' ', '.'))
+            {
+                return null;
+            }
+            if (component.IndexOfAny(WindowsInvalidChars) >= 0)
+            {
+                return null;
+            }
+            var stem = component.Split('.')[0];
+            if (WindowsReservedNames.Contains(stem))
+            {
+                return null;
+            }
+        }
+        return name;
+    }
+
+    /// <summary>True if <paramref name="candidateDir"/> resolves inside <paramref name="root"/>.</summary>
+    private static bool IsInsideRoot(string root, string candidateDir)
+    {
+        var fullRoot = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var fullCandidate = Path.GetFullPath(candidateDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return fullCandidate.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
     public string SortFile(string path, string root, bool dryRun = false)
     {
         var category = Categorize(Path.GetFileName(path), EffectiveRules(root));
-        var destDir = Path.Combine(root, category);
+        var safe = SafeCategoryName(category) ?? "Needs-review";
+        if (safe != category)
+        {
+            Console.Error.WriteLine($"!! unsafe destination '{category}', using '{safe}'");
+        }
+        var destDir = Path.Combine(root, safe);
+        if (!IsInsideRoot(root, destDir))
+        {
+            safe = "Needs-review";
+            destDir = Path.Combine(root, safe);
+        }
         var destination = UniquePath(Path.Combine(destDir, Path.GetFileName(path)));
 
         if (dryRun)
         {
-            return category;
+            return safe;
         }
 
         Directory.CreateDirectory(destDir);
         File.Move(path, destination);
         Journal(path, destination);
-        return category;
+        return safe;
     }
 
     // -- sweeping --------------------------------------------------------
@@ -208,7 +315,9 @@ public sealed class SortEngine
     public SortStats Sweep(IEnumerable<string> roots, bool dryRun = false)
     {
         var stats = new SortStats();
-        var minStable = _config.LoadSettings().MinStableSeconds;
+        var settings = _config.LoadSettings();
+        var minStable = settings.MinStableSeconds;
+        var interval = settings.StabilityInterval;
 
         foreach (var root in roots)
         {
@@ -229,6 +338,10 @@ public sealed class SortEngine
                 continue;
             }
 
+            // Pass 1: collect eligible files, remembering their sizes, so the
+            // (slow) settle sleep only happens once per batch instead of once
+            // per file.
+            var candidates = new List<(string Path, long Size)>();
             foreach (var entry in entries)
             {
                 var name = Path.GetFileName(entry);
@@ -237,16 +350,73 @@ public sealed class SortEngine
                     stats.Skipped++;
                     continue;
                 }
-                if (!IsStable(entry, minStable))
+                try
+                {
+                    var info = new FileInfo(entry);
+                    if (!info.Exists ||
+                        (minStable > 0 &&
+                         (DateTime.UtcNow - info.LastWriteTimeUtc).TotalSeconds < minStable))
+                    {
+                        stats.Skipped++;
+                        continue;
+                    }
+                    candidates.Add((entry, info.Length));
+                }
+                catch (Exception)
+                {
+                    stats.Skipped++;
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                continue;
+            }
+
+            if (!dryRun && interval > 0)
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(interval));
+            }
+
+            // Pass 2: re-check each candidate's size, then move it. One
+            // un-sortable file (locked, permissions, …) must not abort the
+            // rest of the sweep.
+            foreach (var (entry, size1) in candidates)
+            {
+                if (!File.Exists(entry))
                 {
                     stats.Skipped++;
                     continue;
                 }
-                var category = SortFile(entry, root, dryRun);
-                stats.Moved++;
-                if (category == "Needs-review")
+                if (!dryRun)
                 {
-                    stats.NeedsReview++;
+                    try
+                    {
+                        if (new FileInfo(entry).Length != size1)
+                        {
+                            stats.Skipped++;
+                            continue;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        stats.Skipped++;
+                        continue;
+                    }
+                }
+                try
+                {
+                    var category = SortFile(entry, root, dryRun);
+                    stats.Moved++;
+                    if (category == "Needs-review")
+                    {
+                        stats.NeedsReview++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"!! could not sort {entry}: {ex.Message}");
+                    stats.Failed++;
                 }
             }
         }
@@ -260,7 +430,13 @@ public sealed class SortEngine
         lock (_journalLock)
         {
             Directory.CreateDirectory(_config.DataDir);
-            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\t{source}\t{destination}\n";
+            var entry = new JournalEntry
+            {
+                Ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Src = source,
+                Dest = destination,
+            };
+            var line = JsonSerializer.Serialize(entry, JournalJson) + "\n";
             File.AppendAllText(_config.HistoryPath, line);
         }
     }
@@ -274,9 +450,35 @@ public sealed class SortEngine
                 return new List<MoveRecord>();
             }
             var rows = new List<MoveRecord>();
-            foreach (var line in File.ReadAllLines(_config.HistoryPath))
+            foreach (var raw in File.ReadAllLines(_config.HistoryPath))
             {
-                var parts = line.Split('\t');
+                var line = raw.Trim();
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+                if (line.StartsWith('{'))               // current JSON format
+                {
+                    try
+                    {
+                        var entry = JsonSerializer.Deserialize<JournalEntry>(line);
+                        if (entry is not null)
+                        {
+                            rows.Add(new MoveRecord
+                            {
+                                Timestamp = entry.Ts,
+                                Source = entry.Src,
+                                Destination = entry.Dest,
+                            });
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // ignore malformed lines
+                    }
+                    continue;
+                }
+                var parts = line.Split('\t');           // legacy tab format
                 if (parts.Length < 3)
                 {
                     continue;
@@ -340,9 +542,9 @@ public sealed class SortEngine
                 var sb = new StringBuilder();
                 foreach (var row in ordered)
                 {
-                    sb.Append(row.Timestamp).Append('\t')
-                      .Append(row.Source).Append('\t')
-                      .Append(row.Destination).Append('\n');
+                    sb.Append(JsonSerializer.Serialize(
+                        new JournalEntry { Ts = row.Timestamp, Src = row.Source, Dest = row.Destination },
+                        JournalJson)).Append('\n');
                 }
                 Directory.CreateDirectory(_config.DataDir);
                 File.WriteAllText(_config.HistoryPath, sb.ToString());

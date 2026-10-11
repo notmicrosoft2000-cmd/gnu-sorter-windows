@@ -18,7 +18,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>Assets\Icon.ico</ApplicationIcon>
-    <Version>2.0.0</Version>
+    <Version>2.5.0</Version>
     <AssemblyTitle>GNU Sorter for Windows</AssemblyTitle>
     <Product>GNU Sorter</Product>
     <Authors>notmicrosoft2000-cmd</Authors>
