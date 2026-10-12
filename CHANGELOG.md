@@ -17,6 +17,11 @@ with the same pre-release channels as the Linux app:
   brushes, so the whole accent set (`SystemAccentColor`,
   `AccentFillColor*Brush`, `TextOnAccent*Brush`, selection indicators, …) is
   overridden per theme in `App.xaml`. High-contrast themes are left untouched.
+- **Accent colour picker** in Settings: *Follow Windows*, *Funnel green* (the
+  default) or any of the shared palette colours (lime, teal, cyan, blue,
+  purple, pink, red, orange, yellow, slate). The choice is saved as `accent`
+  in `settings.json` — the same key the Python app uses — and applied live via
+  `AccentService` without restarting.
 
 ### Changed
 - **Top navigation tabs**: Folders · Rules · Activity now sit as tabs in the

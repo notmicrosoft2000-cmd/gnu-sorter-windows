@@ -34,6 +34,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _colorSchemeIndex;
 
+    /// <summary>0 = follow Windows, 1 = green, … (bound to the ComboBox).</summary>
+    [ObservableProperty]
+    private int _accentIndex = 1;
+
     /// <summary>Journal retention (bound to NumberBox, hence double).</summary>
     [ObservableProperty]
     private double _historyMaxEntries = 2500;
@@ -61,6 +65,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ => ThemeService.Default,
     };
 
+    /// <summary>Accent key derived from the ComboBox index (see AccentService).</summary>
+    public string Accent =>
+        AccentIndex >= 0 && AccentIndex < AccentService.OrderedKeys.Count
+            ? AccentService.OrderedKeys[AccentIndex]
+            : AccentService.DefaultKey;
+
     public SettingsViewModel(AppServices services)
     {
         _services = services;
@@ -83,6 +93,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             "dark" => 2,
             _ => 0,
         };
+        AccentIndex = AccentIndexFor(settings.Accent);
         HistoryMaxEntries = settings.HistoryMaxEntries;
         HistoryMaxBytes = settings.HistoryMaxBytes;
         StartOnLogin = StartupService.IsEnabled();
@@ -101,8 +112,22 @@ public sealed partial class SettingsViewModel : ObservableObject
             CautiousDownloads = CautiousDownloads,
             CheckForUpdates = CheckForUpdates,
             ColorScheme = ColorScheme,
+            Accent = Accent,
             HistoryMaxEntries = (int)Math.Max(1, HistoryMaxEntries),
             HistoryMaxBytes = (long)Math.Max(1000, HistoryMaxBytes),
         });
+    }
+
+    private static int AccentIndexFor(string? accent)
+    {
+        var key = (accent ?? "").Trim().ToLowerInvariant();
+        for (var i = 0; i < AccentService.OrderedKeys.Count; i++)
+        {
+            if (AccentService.OrderedKeys[i] == key)
+            {
+                return i;
+            }
+        }
+        return 1; // default to Funnel green
     }
 }

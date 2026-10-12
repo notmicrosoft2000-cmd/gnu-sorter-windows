@@ -13,7 +13,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Funnel";
-        ThemeService.Apply(_services.Config.LoadSettings().ColorScheme);
+        var settings = _services.Config.LoadSettings();
+        ThemeService.Apply(settings.ColorScheme);
+        AccentService.Apply(settings.Accent);
 
         try
         {

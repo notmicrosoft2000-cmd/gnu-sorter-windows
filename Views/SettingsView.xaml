@@ -17,6 +17,26 @@
             <TextBlock Text="Applied when you save. System default follows Windows."
                        FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
 
+            <!-- Order must match AccentService.OrderedKeys. -->
+            <ComboBox Header="Accent colour"
+                      MinWidth="220"
+                      SelectedIndex="{x:Bind ViewModel.AccentIndex, Mode=TwoWay}">
+                <ComboBoxItem Content="Follow Windows" />
+                <ComboBoxItem Content="Funnel green" />
+                <ComboBoxItem Content="Lime" />
+                <ComboBoxItem Content="Teal" />
+                <ComboBoxItem Content="Cyan" />
+                <ComboBoxItem Content="Blue" />
+                <ComboBoxItem Content="Purple" />
+                <ComboBoxItem Content="Pink" />
+                <ComboBoxItem Content="Red" />
+                <ComboBoxItem Content="Orange" />
+                <ComboBoxItem Content="Yellow" />
+                <ComboBoxItem Content="Slate" />
+            </ComboBox>
+            <TextBlock Text="Recolours buttons, toggles, selections and highlights. Applied when you save."
+                       FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+
             <TextBlock Text="Behavior" Style="{StaticResource SubtitleTextBlockStyle}" />
 
             <NumberBox Header="Stability window (seconds)"

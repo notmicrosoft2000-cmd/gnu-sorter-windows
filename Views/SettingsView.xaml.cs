@@ -23,6 +23,7 @@ public sealed partial class SettingsView : Page
         {
             ViewModel.Save();
             ThemeService.Apply(ViewModel.ColorScheme);
+            AccentService.Apply(ViewModel.Accent);
 
             if (ViewModel.StartOnLogin)
             {

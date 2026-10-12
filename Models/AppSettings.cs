@@ -24,6 +24,12 @@ public sealed class AppSettings
     public string ColorScheme { get; set; } = "default";
 
     /// <summary>
+    /// Brand accent: "system" (follow Windows) or a Funnel palette key
+    /// ("green", "lime", "teal", …). Same key as the Python app's settings.json.
+    /// </summary>
+    public string Accent { get; set; } = "green";
+
+    /// <summary>
     /// Journal retention: once history.log passes <see cref="HistoryMaxBytes"/>,
     /// trim it down to the most recent <see cref="HistoryMaxEntries"/> entries.
     /// </summary>
@@ -41,6 +47,7 @@ public sealed class AppSettings
         CautiousDownloads = CautiousDownloads,
         CheckForUpdates = CheckForUpdates,
         ColorScheme = ColorScheme,
+        Accent = Accent,
         HistoryMaxEntries = HistoryMaxEntries,
         HistoryMaxBytes = HistoryMaxBytes,
     };
