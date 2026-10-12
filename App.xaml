@@ -7,6 +7,87 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--
+              Funnel brand accent — the same lime as the Linux app and the
+              website (#a3e635 on dark, #4d7c0f on light, ink #0b0d08/#ffffff
+              for text on top). WinUI bakes the system accent into a set of
+              brushes, so we override them here rather than tinting the system
+              accent. High-contrast is deliberately left alone so accessibility
+              themes keep working.
+            -->
+            <ResourceDictionary.ThemeDictionaries>
+
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#4D7C0F</Color>
+                    <Color x:Key="SystemAccentColorLight1">#5F8927</Color>
+                    <Color x:Key="SystemAccentColorLight2">#71963F</Color>
+                    <Color x:Key="SystemAccentColorLight3">#82A357</Color>
+                    <Color x:Key="SystemAccentColorDark1">#45700D</Color>
+                    <Color x:Key="SystemAccentColorDark2">#3E630C</Color>
+                    <Color x:Key="SystemAccentColorDark3">#36570A</Color>
+
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#4D7C0F" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#E64D7C0F" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#CC4D7C0F" />
+                    <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#664D7C0F" />
+
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#4D7C0F" />
+                    <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#E64D7C0F" />
+                    <SolidColorBrush x:Key="AccentTextFillColorTertiaryBrush" Color="#CC4D7C0F" />
+                    <SolidColorBrush x:Key="AccentTextFillColorDisabledBrush" Color="#664D7C0F" />
+
+                    <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#E6FFFFFF" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorDisabledBrush" Color="#66FFFFFF" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorSelectedTextBrush" Color="#FFFFFF" />
+
+                    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#4D7C0F" />
+                    <SolidColorBrush x:Key="SystemControlForegroundAccentBrush" Color="#4D7C0F" />
+                    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush" Color="#4D7C0F" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#664D7C0F" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#B34D7C0F" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#FF4D7C0F" />
+
+                    <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#4D7C0F" />
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemAccentColor">#A3E635</Color>
+                    <Color x:Key="SystemAccentColorLight1">#ACE849</Color>
+                    <Color x:Key="SystemAccentColorLight2">#B5EB5D</Color>
+                    <Color x:Key="SystemAccentColorLight3">#BFED72</Color>
+                    <Color x:Key="SystemAccentColorDark1">#93CF30</Color>
+                    <Color x:Key="SystemAccentColorDark2">#82B82A</Color>
+                    <Color x:Key="SystemAccentColorDark3">#72A125</Color>
+
+                    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#A3E635" />
+                    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#E6A3E635" />
+                    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#CCA3E635" />
+                    <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#66A3E635" />
+
+                    <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#A3E635" />
+                    <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#E6A3E635" />
+                    <SolidColorBrush x:Key="AccentTextFillColorTertiaryBrush" Color="#CCA3E635" />
+                    <SolidColorBrush x:Key="AccentTextFillColorDisabledBrush" Color="#66A3E635" />
+
+                    <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#0B0D08" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#E60B0D08" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorDisabledBrush" Color="#660B0D08" />
+                    <SolidColorBrush x:Key="TextOnAccentFillColorSelectedTextBrush" Color="#0B0D08" />
+
+                    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#A3E635" />
+                    <SolidColorBrush x:Key="SystemControlForegroundAccentBrush" Color="#A3E635" />
+                    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush" Color="#A3E635" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#66A3E635" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#B3A3E635" />
+                    <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#FFA3E635" />
+
+                    <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#A3E635" />
+                </ResourceDictionary>
+
+            </ResourceDictionary.ThemeDictionaries>
+
             <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         </ResourceDictionary>
     </Application.Resources>

@@ -27,8 +27,12 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Image Source="ms-appx:///Assets/Icon.png" Width="20" Height="20" />
-                    <TextBlock Text="Funnel" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Image Source="ms-appx:///Assets/Icon.png" Width="22" Height="22" />
+                    <TextBlock Text="Funnel"
+                               FontWeight="SemiBold"
+                               FontSize="15"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource SystemControlForegroundAccentBrush}" />
                 </StackPanel>
 
                 <TextBlock x:Name="StatusText"
@@ -57,10 +61,13 @@
             </Grid>
         </Border>
 
+        <!-- Top tabs mirror the Linux header switcher (Folders · Rules ·
+             Activity), with the built-in Settings item as the gear on the right. -->
         <controls:NavigationView x:Name="NavView"
                                  Grid.Row="1"
                                  IsBackButtonVisible="Collapsed"
-                                 PaneDisplayMode="Left"
+                                 IsPaneToggleButtonVisible="False"
+                                 PaneDisplayMode="Top"
                                  IsSettingsVisible="True"
                                  SelectionChanged="NavView_SelectionChanged">
             <controls:NavigationView.MenuItems>
@@ -81,7 +88,13 @@
                 </controls:NavigationViewItem>
             </controls:NavigationView.MenuItems>
 
-            <Frame x:Name="ContentFrame" />
+            <Frame x:Name="ContentFrame">
+                <Frame.ContentTransitions>
+                    <TransitionCollection>
+                        <NavigationThemeTransition />
+                    </TransitionCollection>
+                </Frame.ContentTransitions>
+            </Frame>
         </controls:NavigationView>
     </Grid>
 </Window>

@@ -10,6 +10,24 @@ with the same pre-release channels as the Linux app:
 
 ## [Unreleased]
 
+### Added
+- **Green brand accent**: the app now wears Funnel's colour — the same lime as
+  the Linux app and the website (`#a3e635` on dark, `#4d7c0f` on light, with
+  `#0b0d08`/`#ffffff` text on top). WinUI bakes the system accent into a set of
+  brushes, so the whole accent set (`SystemAccentColor`,
+  `AccentFillColor*Brush`, `TextOnAccent*Brush`, selection indicators, …) is
+  overridden per theme in `App.xaml`. High-contrast themes are left untouched.
+
+### Changed
+- **Top navigation tabs**: Folders · Rules · Activity now sit as tabs in the
+  header (`NavigationView` in `Top` mode) instead of a left sidebar, mirroring
+  the Linux shell, with Settings as the gear on the right.
+- **Animated page changes**: the content frame uses a
+  `NavigationThemeTransition`, so switching tabs animates.
+- The header wordmark is tinted with the brand accent, matching Linux.
+- **App icon is now green**, regenerated from `Assets/Icon.svg` (`Icon.png`, the
+  multi-resolution `Icon.ico`, and the docs images).
+
 ## [3.0.0] - 2026-10-12 "Tunneler"
 
 ### Added
