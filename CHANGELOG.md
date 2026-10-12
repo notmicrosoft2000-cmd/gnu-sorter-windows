@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 with the same pre-release channels as the Linux app:
 `indev` → `alpha` → `beta` → `rc` → stable.
 
-## [Unreleased] — 3.0.0 "Tunneler"
+## [Unreleased]
+
+## [3.0.0] - 2026-10-12 "Tunneler"
 
 ### Added
 - **Single-source version & branding**: product name, version, icon and
@@ -34,7 +36,7 @@ with the same pre-release channels as the Linux app:
 
 ### Changed
 - Version scheme aligned with Linux (`X.Y.Z-dev.N` / `-alpha.N` / `-beta.N` /
-  `-rc.N` / `X.Y.Z`). The current build is `3.0.0-dev.0` (indev).
+  `-rc.N` / `X.Y.Z`), so the two platforms ship the same version on the same
+  channel.
 
-> The Windows app now mirrors Linux Phase 4 in full; the next milestone is the
-> `3.0.0` release.
+> The Windows app now mirrors Linux Phase 4 in full.
