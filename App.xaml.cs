@@ -77,7 +77,9 @@ public partial class App : Application
 
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
-        // Keep the app alive; the exception is surfaced in the debugger output.
+        // Keep the app alive (mark handled) and surface the exception in the
+        // debugger output. Without Handled the runtime would still terminate.
         System.Diagnostics.Debug.WriteLine(e.Exception);
+        e.Handled = true;
     }
 }

@@ -873,8 +873,11 @@ public sealed class SortEngine
     }
 
     /// <summary>
-    /// Parse a byte count: a bare number (bytes) or a suffix <c>K</c>/<c>M</c>/<c>G</c>
-    /// (decimal, matching the Python app). Returns null when it is not a size.
+    /// Parse a byte count: a bare number (bytes) or a suffix
+    /// <c>K</c>/<c>M</c>/<c>G</c> (also <c>KB</c>/<c>MB</c>/<c>GB</c> and
+    /// <c>B</c>). Units are 1024-based, matching the Python app's
+    /// <c>parse_size</c> so the same text filters the same way on both
+    /// platforms. Returns null when it is not a size.
     /// </summary>
     public static long? ParseSize(string? text)
     {
@@ -882,22 +885,29 @@ public sealed class SortEngine
         {
             return null;
         }
-        var value = text.Trim().ToLowerInvariant();
+        var value = text.Trim().ToLowerInvariant().Replace(" ", "");
+        if (value.Length == 0)
+        {
+            return null;
+        }
         long factor = 1;
-        if (value.EndsWith('k'))
+        foreach (var (suffix, factorForSuffix) in new (string, long)[]
+                 {
+                     ("kb", 1024L),
+                     ("mb", 1024L * 1024),
+                     ("gb", 1024L * 1024 * 1024),
+                     ("k", 1024L),
+                     ("m", 1024L * 1024),
+                     ("g", 1024L * 1024 * 1024),
+                     ("b", 1L),
+                 })
         {
-            factor = 1_000;
-            value = value[..^1];
-        }
-        else if (value.EndsWith('m'))
-        {
-            factor = 1_000_000;
-            value = value[..^1];
-        }
-        else if (value.EndsWith('g'))
-        {
-            factor = 1_000_000_000;
-            value = value[..^1];
+            if (value.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                factor = factorForSuffix;
+                value = value[..^suffix.Length];
+                break;
+            }
         }
         if (double.TryParse(value.Trim(), NumberStyles.Float,
                 CultureInfo.InvariantCulture, out var number) && number >= 0)
@@ -1057,13 +1067,15 @@ public sealed class SortEngine
             rows = rows.Where(x => wanted.Contains(
                 Path.GetExtension(x.Src).TrimStart('.').ToLowerInvariant())).ToList();
         }
+        // Unknown-size records (pre-v2 entries) never satisfy a size bound,
+        // matching the Python engine's _rec_size handling.
         if (minSize is long low)
         {
-            rows = rows.Where(x => (x.Size ?? 0) >= low).ToList();
+            rows = rows.Where(x => x.Size is long s && s >= low).ToList();
         }
         if (maxSize is long high)
         {
-            rows = rows.Where(x => (x.Size ?? 0) <= high).ToList();
+            rows = rows.Where(x => x.Size is long s && s <= high).ToList();
         }
         if (limit is int n && n > 0 && rows.Count > n)
         {

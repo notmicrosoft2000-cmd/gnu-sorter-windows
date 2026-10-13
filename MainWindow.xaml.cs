@@ -14,7 +14,13 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Title = "Funnel";
         var settings = _services.Config.LoadSettings();
-        ThemeService.Apply(settings.ColorScheme);
+        // App.RootWindow is assigned only after this constructor returns, so
+        // ThemeService.Apply (which targets App.RootWindow) would be a no-op
+        // here. Apply the saved scheme to this window's own content instead.
+        if (Content is FrameworkElement rootElement)
+        {
+            rootElement.RequestedTheme = ThemeService.ToElementTheme(settings.ColorScheme);
+        }
         AccentService.Apply(settings.Accent);
 
         try

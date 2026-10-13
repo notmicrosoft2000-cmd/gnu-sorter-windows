@@ -49,13 +49,17 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Margin="24" ColumnSpacing="20">
+    <Grid Margin="24" ColumnSpacing="20" RowSpacing="12">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="260" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <StackPanel Grid.Column="0" Spacing="8">
+        <StackPanel Grid.Column="0" Grid.Row="0" Spacing="8">
             <TextBlock Text="Folders" Style="{StaticResource SubtitleTextBlockStyle}" />
             <ListView x:Name="FoldersPane"
                       SelectionMode="Single"
@@ -63,7 +67,7 @@
                       SelectionChanged="FoldersPane_SelectionChanged" />
         </StackPanel>
 
-        <Grid Grid.Column="1" RowSpacing="12">
+        <Grid Grid.Column="1" Grid.Row="0" RowSpacing="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -118,8 +122,8 @@
         </Grid>
 
         <InfoBar x:Name="StatusBar"
-                 Grid.Column="1"
-                 VerticalAlignment="Bottom"
+                 Grid.Row="1"
+                 Grid.ColumnSpan="2"
                  IsOpen="False"
                  IsClosable="True" />
     </Grid>

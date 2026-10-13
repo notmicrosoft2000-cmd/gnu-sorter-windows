@@ -265,6 +265,11 @@ public sealed class RuleWizardDialog : ContentDialog
             ShowError("That name pattern isn't a valid regular expression.");
             return;
         }
+        if (!ExcludeRegexOk())
+        {
+            ShowError("That exclusion pattern isn't a valid regular expression.");
+            return;
+        }
         var rule = BuildRule();
         rule.Name = safe;
         CreatedRule = rule;
@@ -1212,7 +1217,15 @@ public sealed class RuleWizardDialog : ContentDialog
         {
             return true;
         }
-        var pattern = _nameText.Trim();
+        return IsValidRegex(_nameText);
+    }
+
+    /// <summary>True when the optional "never match" pattern compiles (or is empty).</summary>
+    private bool ExcludeRegexOk() => IsValidRegex(_excludeBox.Text);
+
+    private static bool IsValidRegex(string? pattern)
+    {
+        pattern = (pattern ?? "").Trim();
         if (pattern.Length == 0)
         {
             return true;

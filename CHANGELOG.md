@@ -33,6 +33,23 @@ with the same pre-release channels as the Linux app:
 - **App icon is now green**, regenerated from `Assets/Icon.svg` (`Icon.png`, the
   multi-resolution `Icon.ico`, and the docs images).
 
+### Fixed
+- The saved theme is now applied on startup. It was previously applied before
+  the window existed and silently did nothing, so a Light/Dark choice only took
+  effect after the window was already shown.
+- Rule summaries join matchers with **and** when a rule is set to match *all*
+  conditions, instead of always using **or**.
+- The folder *Enable* toggle now reflects the switch itself rather than the
+  folder's stored state, so toggling a row works the first time.
+- The rule wizard now validates the exclusion regex (like the match patterns),
+  instead of accepting an invalid pattern and failing later.
+- Size thresholds use 1024-based units (`1M` = 1,048,576 bytes), matching the
+  Linux app and its `parse_size` (previously decimal, 1000-based).
+- Size filters no longer match files whose size is unknown, matching Linux.
+- The Rules page info bar no longer overlaps the rule list.
+- Unhandled exceptions are now actually suppressed to keep the app alive, as
+  the handler always intended (it never set `Handled`).
+
 ## [3.0.0] - 2026-10-12 "Tunneler"
 
 ### Added

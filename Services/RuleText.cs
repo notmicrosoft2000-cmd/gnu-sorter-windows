@@ -56,11 +56,16 @@ public static class RuleText
     public static string Describe(SortRule rule)
     {
         var clauses = MatchClauses(rule);
+        // "All" (AND) rules must read as "and", matching the Python
+        // describe_rule and the engine's match_mode behaviour.
+        var joiner = string.Equals(rule.MatchMode, "all", StringComparison.OrdinalIgnoreCase)
+            ? " and "
+            : " or ";
         var text = clauses.Count switch
         {
             0 => "nothing yet",
             1 => clauses[0],
-            _ => string.Join(" or ", clauses),
+            _ => string.Join(joiner, clauses),
         };
         var filters = FilterClauses(rule);
         if (filters.Count > 0)

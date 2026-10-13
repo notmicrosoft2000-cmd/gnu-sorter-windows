@@ -144,7 +144,8 @@ public sealed partial class FoldersView : Page
 
     private void FolderToggle_Toggled(object sender, RoutedEventArgs e)
     {
-        if (_loading || sender is not FrameworkElement { DataContext: RootItemViewModel item })
+        if (_loading || sender is not ToggleSwitch
+                { DataContext: RootItemViewModel item } toggle)
         {
             return;
         }
@@ -152,7 +153,7 @@ public sealed partial class FoldersView : Page
         var roots = _services.Config.LoadRoots();
         foreach (var root in roots.Where(r => SamePath(r.Path, item.Path)))
         {
-            root.Enabled = item.Enabled;
+            root.Enabled = toggle.IsOn;
         }
         _services.Config.SaveRoots(roots);
 
