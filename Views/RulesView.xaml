@@ -6,21 +6,28 @@
         <DataTemplate x:Key="RuleTemplate">
             <Grid ColumnSpacing="8" Padding="4,6">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="24" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Ellipse Grid.Column="0"
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Index}"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Opacity="0.55" />
+
+                <Ellipse Grid.Column="1"
                          Width="12"
                          Height="12"
                          VerticalAlignment="Center"
                          Fill="{Binding ColorBrush}"
                          Visibility="{Binding HasColor, Converter={StaticResource BoolToVisibility}}" />
 
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding Subtitle}"
                                Opacity="0.7"
@@ -28,15 +35,42 @@
                                TextTrimming="CharacterEllipsis" />
                 </StackPanel>
 
-                <Button Grid.Column="2" Content="Edit" Click="EditRule_Click" />
-                <Button Grid.Column="3" Click="DuplicateRule_Click" ToolTipService.ToolTip="Duplicate rule">
-                    <SymbolIcon Symbol="Copy" />
-                </Button>
-                <Button Grid.Column="4" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete rule">
-                    <SymbolIcon Symbol="Delete" />
-                </Button>
+                <FontIcon Grid.Column="3"
+                          Glyph="&#xE7BA;"
+                          FontSize="14"
+                          VerticalAlignment="Center"
+                          Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                          ToolTipService.ToolTip="{Binding Warning}"
+                          Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
+
+                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
+                    <ToggleSwitch IsOn="{Binding IsEnabled, Mode=OneWay}"
+                                  OnContent=""
+                                  OffContent=""
+                                  MinWidth="0"
+                                  Margin="0,0,4,0"
+                                  Toggled="RuleToggle_Toggled"
+                                  ToolTipService.ToolTip="Enable this rule" />
+                    <Button Padding="6"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Click="RuleMenuButton_Click"
+                            ToolTipService.ToolTip="More">
+                        <FontIcon Glyph="&#xE712;" FontSize="14" />
+                    </Button>
+                </StackPanel>
             </Grid>
         </DataTemplate>
+
+        <MenuFlyout x:Key="RuleMenuFlyout">
+            <MenuFlyoutItem Text="Edit" Click="EditRule_Click" />
+            <MenuFlyoutItem Text="Duplicate" Click="DuplicateRule_Click" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="Move up" Click="MoveRuleUp_Click" />
+            <MenuFlyoutItem Text="Move down" Click="MoveRuleDown_Click" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="Remove" Click="DeleteRule_Click" />
+        </MenuFlyout>
 
         <DataTemplate x:Key="FolderTemplate">
             <StackPanel Padding="0,6">
@@ -67,13 +101,14 @@
                       SelectionChanged="FoldersPane_SelectionChanged" />
         </StackPanel>
 
-        <Grid Grid.Column="1" Grid.Row="0" RowSpacing="12">
+        <Grid Grid.Column="1" Grid.Row="0" RowSpacing="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBlock x:Name="HeaderText"
@@ -81,44 +116,87 @@
                        Style="{StaticResource TitleTextBlockStyle}" />
 
             <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10">
-                <ToggleSwitch x:Name="InheritToggle"
-                              MinWidth="200"
-                              OnContent="Use default rules"
-                              OffContent="Custom rules"
-                              Toggled="InheritToggle_Toggled" />
-                <Button x:Name="AddRuleButton"
-                        Content="Add rule"
-                        Style="{StaticResource AccentButtonStyle}"
-                        Click="AddRule_Click" />
-                <Button x:Name="PresetButton" Content="Apply preset">
-                    <Button.Flyout>
+                <SplitButton x:Name="AddRuleButton"
+                             Content="Add rule"
+                             Click="AddRule_Click">
+                    <SplitButton.Flyout>
                         <MenuFlyout x:Name="PresetFlyout" />
-                    </Button.Flyout>
-                </Button>
-                <Button x:Name="AdvancedButton" Content="Advanced editor…" Click="Advanced_Click" />
+                    </SplitButton.Flyout>
+                </SplitButton>
                 <TextBox x:Name="SearchBox"
                          PlaceholderText="Search rules"
                          Width="180"
                          TextChanged="SearchBox_TextChanged" />
+                <Button x:Name="PageMenuButton"
+                        ToolTipService.ToolTip="More">
+                    <FontIcon Glyph="&#xE712;" FontSize="14" />
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Advanced editor&#x2026;" Click="Advanced_Click" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="Import rules&#x2026;" Click="ImportRules_Click" />
+                            <MenuFlyoutItem Text="Export rules&#x2026;" Click="ExportRules_Click" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem x:Name="ResetRulesItem"
+                                            Text="Reset to defaults"
+                                            Click="ResetRules_Click" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
             </StackPanel>
 
-            <TextBlock x:Name="RulesHint"
-                       Grid.Row="2"
-                       FontSize="12"
-                       Opacity="0.7"
-                       TextWrapping="Wrap" />
+            <StackPanel Grid.Row="2" Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock x:Name="InheritStatus"
+                               VerticalAlignment="Center"
+                               Opacity="0.85" />
+                    <Button x:Name="CustomizeButton"
+                            Content="Customize&#x2026;"
+                            Click="Customize_Click" />
+                </StackPanel>
+                <TextBlock x:Name="RulesHint"
+                           FontSize="12"
+                           Opacity="0.7"
+                           TextWrapping="Wrap" />
+            </StackPanel>
 
-            <Expander Grid.Row="3" Header="File extensions" IsExpanded="True" HorizontalAlignment="Stretch">
-                <ListView x:Name="ExtRules"
-                          SelectionMode="None"
-                          ItemTemplate="{StaticResource RuleTemplate}" />
-            </Expander>
+            <InfoBar x:Name="WarningsBar"
+                     Grid.Row="3"
+                     Severity="Warning"
+                     IsOpen="False"
+                     IsClosable="False" />
 
-            <Expander Grid.Row="4" Header="Name matching (advanced)" IsExpanded="True" HorizontalAlignment="Stretch">
-                <ListView x:Name="NameRules"
-                          SelectionMode="None"
-                          ItemTemplate="{StaticResource RuleTemplate}" />
-            </Expander>
+            <ListView x:Name="RulesList"
+                      Grid.Row="4"
+                      SelectionMode="Single"
+                      ItemTemplate="{StaticResource RuleTemplate}"
+                      CanReorderItems="True"
+                      CanDragItems="True"
+                      AllowDrop="True"
+                      DragItemsCompleted="RulesList_DragItemsCompleted"
+                      DoubleTapped="RulesList_DoubleTapped" />
+
+            <StackPanel Grid.Row="5" Spacing="6">
+                <TextBox x:Name="TesterBox"
+                         Header="Test a file name"
+                         PlaceholderText="IMG_2043.png"
+                         TextChanged="TesterBox_TextChanged" />
+                <TextBlock x:Name="TesterResult"
+                           Text="Type a name to preview"
+                           Opacity="0.7"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="PreviewButton"
+                            Content="Preview folder"
+                            Click="Preview_Click" />
+                    <TextBlock x:Name="PreviewResult"
+                               VerticalAlignment="Center"
+                               Opacity="0.7"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
         </Grid>
 
         <InfoBar x:Name="StatusBar"

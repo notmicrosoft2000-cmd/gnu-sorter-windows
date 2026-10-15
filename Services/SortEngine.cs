@@ -364,6 +364,140 @@ public sealed class SortEngine
         return result;
     }
 
+    /// <summary>
+    /// Read-only tally of where a folder's files <em>would</em> go:
+    /// destination folder → number of eligible top-level files. Mirrors the
+    /// sweep's eligibility rule (top-level files only; hidden, symlinked and
+    /// in-progress names skipped) but never touches disk, and unlike
+    /// <see cref="Sweep"/> reports a per-destination breakdown.
+    /// </summary>
+    public Dictionary<string, int> PreviewPlan(IEnumerable<string> roots,
+        IReadOnlyList<CompiledRule>? rules = null, int limit = 5000)
+    {
+        var effective = rules ?? Compile(_config.LoadRules());
+        var counts = new Dictionary<string, int>();
+        var seen = 0;
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+            string[] entries;
+            try
+            {
+                entries = Directory.GetFiles(root);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+            foreach (var entry in entries.OrderBy(
+                         p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase))
+            {
+                if (seen >= limit)
+                {
+                    break;
+                }
+                var name = Path.GetFileName(entry);
+                if (name.StartsWith('.'))
+                {
+                    continue;
+                }
+                if (IsSymlink(entry) || LooksInProgress(name))
+                {
+                    continue;
+                }
+                FileInfo info;
+                try
+                {
+                    info = new FileInfo(entry);
+                    if (!info.Exists)
+                    {
+                        continue;
+                    }
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+                var dest = Categorize(name, effective, info);
+                counts[dest] = counts.GetValueOrDefault(dest) + 1;
+                seen++;
+            }
+        }
+        return counts;
+    }
+
+    /// <summary>
+    /// Non-fatal warnings about how an ordered ruleset behaves (used by the
+    /// rules page). Rules are evaluated top to bottom and the first match
+    /// wins, so a rule is <em>unreachable</em> when an earlier one already
+    /// claims everything it matches: a duplicated extension, or any rule
+    /// below a catch-all. Mirrors the Python <c>rule_overlaps</c>.
+    /// </summary>
+    public static List<RuleWarning> Overlaps(IEnumerable<SortRule> rules)
+    {
+        var warnings = new List<RuleWarning>();
+        var claimed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? shadowedFrom = null;
+        foreach (var rule in rules)
+        {
+            var name = string.IsNullOrEmpty(rule.Name) ? "?" : rule.Name;
+            if (rule.Enabled is false)
+            {
+                continue;
+            }
+            if (shadowedFrom is not null)
+            {
+                warnings.Add(new RuleWarning
+                {
+                    Rule = name,
+                    Message = $"Never reached \u2014 \u201c{shadowedFrom}\u201d above "
+                              + "it matches every file.",
+                });
+                continue;
+            }
+            var hasPositive = rule.MatchAll
+                || rule.Extensions.Any(e => !string.IsNullOrWhiteSpace(e))
+                || !string.IsNullOrWhiteSpace(rule.MatchNameRegex);
+            if (!hasPositive)
+            {
+                warnings.Add(new RuleWarning
+                {
+                    Rule = name,
+                    Message = "Matches nothing \u2014 add an extension or a name pattern.",
+                });
+            }
+            foreach (var raw in rule.Extensions)
+            {
+                var ext = (raw ?? "").Trim().TrimStart('.').ToLowerInvariant();
+                if (ext.Length == 0)
+                {
+                    continue;
+                }
+                if (claimed.TryGetValue(ext, out var owner))
+                {
+                    warnings.Add(new RuleWarning
+                    {
+                        Rule = name,
+                        Message = $".{ext} is already claimed by \u201c{owner}\u201d, "
+                                  + "which comes first.",
+                    });
+                }
+                else
+                {
+                    claimed[ext] = name;
+                }
+            }
+            if (rule.MatchAll)
+            {
+                shadowedFrom = name;
+            }
+        }
+        return warnings;
+    }
+
     public static bool LooksInProgress(string fileName)
     {
         var lowered = fileName.ToLowerInvariant();

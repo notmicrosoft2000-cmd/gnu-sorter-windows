@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using GnuSorter.Helpers;
 using GnuSorter.Models;
@@ -16,22 +17,25 @@ public sealed partial class RulesView : Page
 {
     private readonly AppServices _services = App.Services;
     private readonly ObservableCollection<RootItemViewModel> _folders = new();
-    private readonly ObservableCollection<RuleItemViewModel> _extItems = new();
-    private readonly ObservableCollection<RuleItemViewModel> _nameItems = new();
+    private readonly ObservableCollection<RuleItemViewModel> _items = new();
 
     private List<SortRule> _templateRules = new();
+
+    /// <summary>The rules for the selected folder, in true priority order.</summary>
     private List<SortRule> _currentRules = new();
+
     private string? _currentRoot;
     private bool _custom;
-    private bool _loadingToggle;
     private bool _ready;
+
+    /// <summary>The rule a row menu is acting on (set when the menu opens).</summary>
+    private RuleItemViewModel? _menuItem;
 
     public RulesView()
     {
         InitializeComponent();
         FoldersPane.ItemsSource = _folders;
-        ExtRules.ItemsSource = _extItems;
-        NameRules.ItemsSource = _nameItems;
+        RulesList.ItemsSource = _items;
         BuildPresetMenu();
         Loaded += (_, _) => ReloadFolders();
     }
@@ -84,8 +88,6 @@ public sealed partial class RulesView : Page
         {
             _custom = false;
             _currentRules = _templateRules.Select(r => r.Clone()).ToList();
-            InheritToggle.IsEnabled = false;
-            SetEditingEnabled(true);
             HeaderText.Text = "Default rules (all folders)";
             RulesHint.Text = "No folders yet. These rules apply to every folder you add.";
         }
@@ -94,29 +96,42 @@ public sealed partial class RulesView : Page
             var (rules, custom) = _services.Config.RulesFor(_currentRoot);
             _custom = custom;
             _currentRules = rules.Select(r => r.Clone()).ToList();
-            InheritToggle.IsEnabled = true;
-            _loadingToggle = true;
-            InheritToggle.IsOn = !custom;
-            _loadingToggle = false;
-            SetEditingEnabled(!custom);
 
             var name = PathDisplay.NameFor(_currentRoot);
             HeaderText.Text = custom ? $"Rules for {name}" : $"Rules for {name} — using defaults";
-            RulesHint.Text = custom
-                ? "These rules apply only to this folder."
-                : "This folder uses the default rules. Turn off \u201cUse default rules\u201d to customize.";
+            RulesHint.Text = "Rules are checked top to bottom — the first match wins.";
         }
 
+        UpdateInheritUi();
         RefreshRules();
+    }
+
+    private void UpdateInheritUi()
+    {
+        if (_currentRoot is null)
+        {
+            InheritStatus.Text = "No folder selected.";
+            CustomizeButton.Visibility = Visibility.Collapsed;
+        }
+        else if (_custom)
+        {
+            InheritStatus.Text = "This folder has its own rules.";
+            CustomizeButton.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            InheritStatus.Text = "Using the default rules.";
+            CustomizeButton.Visibility = Visibility.Visible;
+        }
+
+        SetEditingEnabled(_currentRoot is null || _custom);
+        ResetRulesItem.IsEnabled = _currentRoot is not null && _custom;
     }
 
     private void SetEditingEnabled(bool enabled)
     {
         AddRuleButton.IsEnabled = enabled;
-        AdvancedButton.IsEnabled = enabled;
-        PresetButton.IsEnabled = enabled;
-        ExtRules.IsEnabled = enabled;
-        NameRules.IsEnabled = enabled;
+        RulesList.IsEnabled = enabled;
     }
 
     // -- rule list -------------------------------------------------------
@@ -125,11 +140,12 @@ public sealed partial class RulesView : Page
     {
         var query = SearchBox.Text?.Trim() ?? "";
         var counts = SafeRuleCounts();
-        _extItems.Clear();
-        _nameItems.Clear();
+        var byRule = WarningsByRule(_currentRules);
 
-        foreach (var rule in _currentRules)
+        _items.Clear();
+        for (var i = 0; i < _currentRules.Count; i++)
         {
+            var rule = _currentRules[i];
             var subtitle = RuleText.Describe(rule);
             if (counts.TryGetValue(rule.Name, out var count) && count > 0)
             {
@@ -146,24 +162,66 @@ public sealed partial class RulesView : Page
                 continue;
             }
 
-            var vm = new RuleItemViewModel
+            byRule.TryGetValue(rule.Name, out var warning);
+            _items.Add(new RuleItemViewModel
             {
+                Index = i + 1,
                 Name = rule.Name,
                 Subtitle = subtitle,
                 IsCustom = _custom,
                 IsNameMatch = rule.IsNameMatch,
+                IsEnabled = rule.Enabled is not false,
                 Rule = rule,
+                Warning = warning,
                 ColorBrush = ParseColor(rule.Color),
-            };
+            });
+        }
 
-            if (rule.IsNameMatch)
+        // Reordering only makes sense when the whole list is visible.
+        RulesList.CanReorderItems = query.Length == 0;
+        UpdateWarningsBar(_currentRules);
+    }
+
+    private void UpdateWarningsBar(List<SortRule> rules)
+    {
+        var warnings = SafeOverlaps(rules);
+        if (warnings.Count == 0)
+        {
+            WarningsBar.IsOpen = false;
+            return;
+        }
+        var first = warnings[0].Message;
+        WarningsBar.Message = warnings.Count == 1
+            ? first
+            : $"{warnings.Count} rules need a look: {first}";
+        WarningsBar.IsOpen = true;
+    }
+
+    private static Dictionary<string, string> WarningsByRule(List<SortRule> rules)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var warning in SafeOverlaps(rules))
+        {
+            if (string.IsNullOrEmpty(warning.Rule))
             {
-                _nameItems.Add(vm);
+                continue;
             }
-            else
-            {
-                _extItems.Add(vm);
-            }
+            result[warning.Rule] = result.TryGetValue(warning.Rule, out var existing)
+                ? $"{existing} {warning.Message}"
+                : warning.Message;
+        }
+        return result;
+    }
+
+    private static List<RuleWarning> SafeOverlaps(List<SortRule> rules)
+    {
+        try
+        {
+            return SortEngine.Overlaps(rules);
+        }
+        catch (Exception)
+        {
+            return new List<RuleWarning>();
         }
     }
 
@@ -181,9 +239,66 @@ public sealed partial class RulesView : Page
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => RefreshRules();
 
-    // -- rule editing ----------------------------------------------------
+    // -- rule interactions ----------------------------------------------
 
-    private async void AddRule_Click(object sender, RoutedEventArgs e)
+    private void RuleMenuButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: RuleItemViewModel item } element)
+        {
+            return;
+        }
+        _menuItem = item;
+        if (Resources["RuleMenuFlyout"] is MenuFlyout flyout)
+        {
+            flyout.ShowAt(element);
+        }
+    }
+
+    private void RuleToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_ready
+            || sender is not ToggleSwitch { DataContext: RuleItemViewModel item } toggle)
+        {
+            return;
+        }
+        // Ignore the initial binding push; only react to a real user change.
+        if (toggle.IsOn == item.IsEnabled)
+        {
+            return;
+        }
+        item.IsEnabled = toggle.IsOn;
+        item.Rule.Enabled = toggle.IsOn ? null : false;
+        Persist();
+        // Rebuild after the toggle finishes so the row's subtitle updates.
+        DispatcherQueue.TryEnqueue(RefreshRules);
+    }
+
+    private void RulesList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is ListView { SelectedItem: RuleItemViewModel item })
+        {
+            _ = EditRuleAsync(item);
+        }
+    }
+
+    private void RulesList_DragItemsCompleted(ListViewBase sender,
+        DragItemsCompletedEventArgs args)
+    {
+        if (!_ready)
+        {
+            return;
+        }
+        // The ListView reordered the bound collection; mirror that order onto
+        // the rule list (this is the priority order) and persist it.
+        _currentRules = _items.Select(vm => vm.Rule).ToList();
+        for (var i = 0; i < _items.Count; i++)
+        {
+            _items[i].Index = i + 1;
+        }
+        Persist();
+    }
+
+    private async void AddRule_Click(SplitButton sender, SplitButtonClickEventArgs args)
     {
         if (!AddRuleButton.IsEnabled)
         {
@@ -216,13 +331,16 @@ public sealed partial class RulesView : Page
         StatusBar.IsOpen = true;
     }
 
-    private async void EditRule_Click(object sender, RoutedEventArgs e)
+    private void EditRule_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: RuleItemViewModel item })
+        if (_menuItem is not null)
         {
-            return;
+            _ = EditRuleAsync(_menuItem);
         }
+    }
 
+    private async Task EditRuleAsync(RuleItemViewModel item)
+    {
         var edited = await ShowRuleDialogAsync(item.Rule);
         if (edited is null)
         {
@@ -247,7 +365,7 @@ public sealed partial class RulesView : Page
 
     private void DuplicateRule_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: RuleItemViewModel item })
+        if (_menuItem is not { } item)
         {
             return;
         }
@@ -267,6 +385,28 @@ public sealed partial class RulesView : Page
         RefreshRules();
     }
 
+    private void MoveRuleUp_Click(object sender, RoutedEventArgs e) => MoveRule(-1);
+
+    private void MoveRuleDown_Click(object sender, RoutedEventArgs e) => MoveRule(+1);
+
+    private void MoveRule(int delta)
+    {
+        if (_menuItem is not { } item)
+        {
+            return;
+        }
+        var index = _currentRules.IndexOf(item.Rule);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= _currentRules.Count)
+        {
+            return;
+        }
+        (_currentRules[index], _currentRules[target]) =
+            (_currentRules[target], _currentRules[index]);
+        Persist();
+        RefreshRules();
+    }
+
     private string UniqueName(string baseName)
     {
         var candidate = $"{baseName} copy";
@@ -281,7 +421,7 @@ public sealed partial class RulesView : Page
 
     private void DeleteRule_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: RuleItemViewModel item })
+        if (_menuItem is not { } item)
         {
             return;
         }
@@ -290,6 +430,260 @@ public sealed partial class RulesView : Page
         Persist();
         RefreshRules();
     }
+
+    private void Customize_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentRoot is null || _custom)
+        {
+            return;
+        }
+        _services.Config.DetachRules(_currentRoot);
+        LoadSelection();
+    }
+
+    // -- tester / preview ------------------------------------------------
+
+    private void TesterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var name = TesterBox.Text?.Trim() ?? "";
+        if (name.Length == 0)
+        {
+            TesterResult.Text = "Type a name to preview";
+            return;
+        }
+
+        string dest;
+        try
+        {
+            dest = _services.Engine.Categorize(name, SortEngine.Compile(_currentRules));
+        }
+        catch (Exception)
+        {
+            TesterResult.Text = "Could not test that name.";
+            return;
+        }
+
+        if (dest == "Needs-review")
+        {
+            TesterResult.Text = $"{name} \u2192 Needs-review \u2014 no enabled rule matches";
+            return;
+        }
+
+        var index = _currentRules.FindIndex(r =>
+            string.Equals(r.Name, dest, StringComparison.OrdinalIgnoreCase));
+        var pos = index >= 0 ? $"  (rule #{index + 1})" : "";
+        TesterResult.Text = $"{name} \u2192 {dest}/{pos}";
+    }
+
+    private void Preview_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentRoot is null)
+        {
+            PreviewResult.Text = "Select a folder first.";
+            return;
+        }
+
+        Dictionary<string, int> plan;
+        try
+        {
+            plan = _services.Engine.PreviewPlan(
+                new[] { _currentRoot }, SortEngine.Compile(_currentRules));
+        }
+        catch (Exception)
+        {
+            PreviewResult.Text = "Could not preview this folder.";
+            return;
+        }
+
+        if (plan.Count == 0)
+        {
+            PreviewResult.Text = "Nothing to sort right now.";
+            return;
+        }
+
+        var parts = plan.OrderByDescending(kv => kv.Value)
+            .Take(6)
+            .Select(kv => $"{kv.Value} \u2192 {kv.Key}");
+        PreviewResult.Text = string.Join("  \u00b7  ", parts);
+    }
+
+    // -- import / export -------------------------------------------------
+
+    private async void ExportRules_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FileSavePicker
+        {
+            SuggestedFileName = "funnel-rules",
+        };
+        picker.FileTypeChoices.Add("JSON", new List<string> { ".json" });
+        if (!InitializePicker(picker))
+        {
+            return;
+        }
+
+        var file = await picker.PickSaveFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = JsonSerializer.Serialize(_currentRules, ConfigStore.SerializerOptions);
+            await Windows.Storage.FileIO.WriteTextAsync(file, json);
+            StatusBar.Severity = InfoBarSeverity.Success;
+            StatusBar.Message = $"Exported {_currentRules.Count} rule(s).";
+            StatusBar.IsOpen = true;
+        }
+        catch (Exception ex)
+        {
+            StatusBar.Severity = InfoBarSeverity.Error;
+            StatusBar.Message = $"Export failed: {ex.Message}";
+            StatusBar.IsOpen = true;
+        }
+    }
+
+    private async void ImportRules_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add(".json");
+        if (!InitializePicker(picker))
+        {
+            return;
+        }
+
+        var file = await picker.PickSingleFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        List<SortRule>? imported;
+        try
+        {
+            var text = await Windows.Storage.FileIO.ReadTextAsync(file);
+            imported = ParseRulePack(text);
+        }
+        catch (Exception ex)
+        {
+            StatusBar.Severity = InfoBarSeverity.Error;
+            StatusBar.Message = $"Could not read that file: {ex.Message}";
+            StatusBar.IsOpen = true;
+            return;
+        }
+
+        if (imported is null || imported.Count == 0)
+        {
+            StatusBar.Severity = InfoBarSeverity.Error;
+            StatusBar.Message = "No rules found in that file.";
+            StatusBar.IsOpen = true;
+            return;
+        }
+
+        var choice = await ShowImportChoiceAsync(imported.Count);
+        if (choice == ContentDialogResult.None)
+        {
+            return;
+        }
+
+        if (choice == ContentDialogResult.Primary)
+        {
+            _currentRules = imported.Select(r => r.Clone()).ToList();
+        }
+        else
+        {
+            foreach (var rule in imported)
+            {
+                _currentRules.RemoveAll(r => string.Equals(
+                    r.Name, rule.Name, StringComparison.OrdinalIgnoreCase));
+                _currentRules.Add(rule.Clone());
+            }
+        }
+
+        if (_currentRoot is not null && !_custom)
+        {
+            _services.Config.DetachRules(_currentRoot);
+            _custom = true;
+            UpdateInheritUi();
+        }
+
+        Persist();
+        RefreshRules();
+        StatusBar.Severity = InfoBarSeverity.Success;
+        StatusBar.Message = $"Imported {imported.Count} rule(s).";
+        StatusBar.IsOpen = true;
+    }
+
+    private static List<SortRule>? ParseRulePack(string text)
+    {
+        using var doc = JsonDocument.Parse(text);
+        JsonElement array;
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            array = doc.RootElement;
+        }
+        else if (doc.RootElement.ValueKind == JsonValueKind.Object
+                 && doc.RootElement.TryGetProperty("rules", out var wrapped)
+                 && wrapped.ValueKind == JsonValueKind.Array)
+        {
+            array = wrapped;
+        }
+        else
+        {
+            return null;
+        }
+        return JsonSerializer.Deserialize<List<SortRule>>(
+            array.GetRawText(), ConfigStore.SerializerOptions);
+    }
+
+    private async Task<ContentDialogResult> ShowImportChoiceAsync(int count)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Import rules",
+            Content = $"{count} rule(s) found. Replace this folder's rules, or "
+                      + "append them (same-named rules are overwritten)?",
+            PrimaryButtonText = "Replace",
+            SecondaryButtonText = "Append",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Secondary,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync();
+    }
+
+    private void ResetRules_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentRoot is null)
+        {
+            return;
+        }
+        if (!_custom)
+        {
+            StatusBar.Severity = InfoBarSeverity.Informational;
+            StatusBar.Message = "Already using the default rules.";
+            StatusBar.IsOpen = true;
+            return;
+        }
+        _services.Config.AttachRules(_currentRoot);
+        LoadSelection();
+        StatusBar.Severity = InfoBarSeverity.Success;
+        StatusBar.Message = "Reverted to the default rules.";
+        StatusBar.IsOpen = true;
+    }
+
+    private static bool InitializePicker(object picker)
+    {
+        if (App.RootWindow is null)
+        {
+            return false;
+        }
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.RootWindow);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        return true;
+    }
+
+    // -- edit dialog -----------------------------------------------------
 
     private async Task<SortRule?> ShowRuleDialogAsync(SortRule? existing)
     {
@@ -564,12 +958,10 @@ public sealed partial class RulesView : Page
                 SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads,
             };
             picker.FileTypeFilter.Add("*");
-            if (App.RootWindow is null)
+            if (!InitializePicker(picker))
             {
                 return null;
             }
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.RootWindow);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
             var folder = await picker.PickSingleFolderAsync();
             return folder?.Path;
         }
@@ -635,56 +1027,7 @@ public sealed partial class RulesView : Page
         }
     }
 
-    // -- inherit / presets / advanced ------------------------------------
-
-    private async void InheritToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loadingToggle || !_ready || _currentRoot is null)
-        {
-            return;
-        }
-
-        if (InheritToggle.IsOn)
-        {
-            if (!_services.Config.IsCustom(_currentRoot))
-            {
-                LoadSelection();
-                return;
-            }
-
-            var dialog = new ContentDialog
-            {
-                Title = "Use default rules?",
-                Content = "This discards this folder's custom rules and follows the default rules instead.",
-                PrimaryButtonText = "Use defaults",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = XamlRoot,
-            };
-
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-            {
-                _loadingToggle = true;
-                InheritToggle.IsOn = false;
-                _loadingToggle = false;
-                return;
-            }
-
-            _services.Config.AttachRules(_currentRoot);
-            LoadSelection();
-            return;
-        }
-
-        // Turning customization on.
-        if (_services.Config.IsCustom(_currentRoot))
-        {
-            LoadSelection();
-            return;
-        }
-
-        _services.Config.DetachRules(_currentRoot);
-        LoadSelection();
-    }
+    // -- presets / advanced ---------------------------------------------
 
     private void BuildPresetMenu()
     {
@@ -702,13 +1045,18 @@ public sealed partial class RulesView : Page
         {
             _services.Config.DetachRules(_currentRoot);
             _custom = true;
-            SetEditingEnabled(true);
-            _loadingToggle = true;
-            InheritToggle.IsOn = false;
-            _loadingToggle = false;
+            UpdateInheritUi();
         }
 
-        _currentRules = rules.Select(r => r.Clone()).ToList();
+        if (rules.Count == 0)
+        {
+            // "Empty" preset keeps the folder custom but clears its rules.
+            _currentRules = new List<SortRule>();
+        }
+        else
+        {
+            _currentRules = rules.Select(r => r.Clone()).ToList();
+        }
         Persist();
         RefreshRules();
 
@@ -719,7 +1067,7 @@ public sealed partial class RulesView : Page
 
     private async void Advanced_Click(object sender, RoutedEventArgs e)
     {
-        if (!AdvancedButton.IsEnabled)
+        if (!RulesList.IsEnabled)
         {
             return;
         }

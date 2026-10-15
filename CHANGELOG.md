@@ -22,6 +22,25 @@ with the same pre-release channels as the Linux app:
   purple, pink, red, orange, yellow, slate). The choice is saved as `accent`
   in `settings.json` — the same key the Python app uses — and applied live via
   `AccentService` without restarting.
+- **Rules page redesign**: a single, priority-ordered rule list (the old
+  two-section Extensions/Names split hid the real first-match-wins order), with
+  **drag-and-drop reordering**, a priority number per row, an inline enable
+  switch and one `⋯` menu per rule (edit / duplicate / move up/down / remove).
+  The toolbar is now **Add rule** (a split button whose dropdown holds the
+  presets), a search box, and a single page `⋯` menu.
+- **Explicit inheritance**: a folder using the default rules now shows
+  *"Using the default rules"* with a **Customize…** button (instead of an
+  ambiguous inherit toggle), and **Reset to defaults** reverts a customised
+  folder from the page menu.
+- **Overlap warnings**: rules that can never match — a duplicated extension, or
+  anything below a catch-all — now raise an inline `InfoBar` and a per-row
+  badge naming the rule and the reason.
+- **Preview a folder** from the rules page: counts how many top-level files
+  each rule would move before you sort, and the filename tester now reports
+  which rule matched.
+- **Rule import & export** (JSON) from the page menu, with *Replace* or
+  *Append* on import; the file format matches the advanced editor and the Linux
+  app.
 
 ### Changed
 - **Top navigation tabs**: Folders · Rules · Activity now sit as tabs in the
